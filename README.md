@@ -21,7 +21,7 @@ When embedding an interpreter into an application, sandboxing is necessary featu
 1. Any user code can not execute actions which is prohibited by host application.
 2. Any user code can not crash or freeze the host application.
 
-This interpreter have features to support abobe glals.
+This interpreter have features to support above goals.
 
 ### Protection from stack overflow
 
@@ -43,7 +43,7 @@ User code can only call the functions that is provided as builtins by the host a
 
 ## The drawback of sandboxing
 
-There is drawback for the sandboxing feature. That is, the interpreter is extremely slow.
+There is drawback of the sandboxing feature. That is, the interpreter is extremely slow.
 
 ## Acknowledgments
 
