@@ -1,0 +1,117 @@
+﻿module FsMiniMAL.Unify
+
+open Types
+
+exception Unify
+
+let map_type f ty =
+    match ty with
+    | Tvar _ -> ty
+    | Tarrow(name, ty1, ty2) -> Tarrow(name, f ty1, f ty2)
+    | Ttuple tyl -> Ttuple(List.map f tyl)
+    | Tconstr(id, tyl) -> Tconstr(id, List.map f tyl)
+
+let do_type f ty = 
+    match ty with
+    | Tvar _ -> ()
+    | Tarrow(_, ty1, ty2) -> 
+        f ty1
+        f ty2
+    | Ttuple tyl -> List.iter f tyl
+    | Tconstr(_, tyl) -> List.iter f tyl
+
+/// Follow the link of type vars and returns represented type.
+/// Therefore returned type will be Ttuple, Tarrow, Tconstr or unassigned Tvar.
+/// As a side effect, updates link field to shortest path to represented type.
+/// (Doing so doesn't change meaning of type instance, only increase performance when call 'repr' for this type instance next time.)
+let rec repr ty =
+    match ty with
+    | Tvar ({ link = Some ty' } as tv) -> 
+        let ty'' = repr ty'
+        if not (LanguagePrimitives.PhysicalEquality ty' ty'') then
+            tv.link <- Some ty''
+        ty''
+    | _ -> ty
+
+/// Substitutes tvar appears in ty using mapping from tvar instance to ty instance.
+let rec subst (s : (type_var * type_expr) list) ty = 
+    match repr ty with
+    | Tvar tv as ty ->
+        match assqo tv s with
+        | Some ty' -> ty'
+        | None -> ty
+    | ty -> map_type (subst s) ty
+
+/// Expand type abbreviation.
+/// When ty is Tconstr which is defined as type abbreviation in tyenv, returns expanded type.
+/// Otherwise returns None.
+let expand (tyenv : tyenv) ty = 
+    match ty with
+    | Tconstr(id, ty_args) ->
+        match tyenv.types_of_id.TryFind(id) with
+        | Some ({ ti_kind = Kabbrev ty' } as info) -> Some (subst (List.zip info.ti_params ty_args) ty')
+        | _ -> None
+    | _ -> None
+
+/// Returns true if two types are same. This function doesn't cause side effects which changes maeaning of type expr.
+let rec same_type tyenv ty1 ty2 =
+    let ty1 = repr ty1
+    let ty2 = repr ty2
+    match ty1, ty2 with
+    | _ when LanguagePrimitives.PhysicalEquality ty1 ty2 -> true
+    | Tvar a, Tvar b -> LanguagePrimitives.PhysicalEquality a b
+    | Tarrow (_, ty11, ty12), Tarrow (_, ty21, ty22) -> same_type tyenv ty11 ty21 && same_type tyenv ty12 ty22
+    | Ttuple l1, Ttuple l2 -> l1.Length = l2.Length && List.forall2 (same_type tyenv) l1 l2
+    | Tconstr (id1, l1), Tconstr (id2, l2) when id1 = id2 -> l1.Length = l2.Length && List.forall2 (same_type tyenv) l1 l2
+    | _ ->
+        match expand tyenv ty1 with
+        | Some ty1 -> same_type tyenv ty1 ty2
+        | None ->
+            match expand tyenv ty2 with
+            | Some ty2 -> same_type tyenv ty1 ty2
+            | None -> false
+
+/// Raises exception Unify when tvar appears in ty.
+/// As a side effect, updates level of all tvar in this ty. 
+let rec occur tv ty = 
+    match repr ty with
+    | Tvar tv' -> 
+        if LanguagePrimitives.PhysicalEquality tv tv' then raise Unify
+        if tv'.level > tv.level then tv'.level <- tv.level
+    | ty -> do_type (occur tv) ty
+
+/// Perform unification. Throws exception Unify when impossible.
+/// Unification is procedure to test two types can be same type by assigining to unassigned tvar, and actually do it.
+/// Note that ty1, ty2 and tyenv can be leave mutated even after failed unification (raises Unify).
+let rec unify tyenv ty1 ty2 = 
+    let ty1 = repr ty1
+    let ty2 = repr ty2 
+    match ty1, ty2 with
+    | _ when LanguagePrimitives.PhysicalEquality ty1 ty2 -> ()
+    | Tvar tv1, Tvar tv2 -> 
+        if tv1.level > tv2.level
+        then tv1.level <- tv2.level
+        else tv2.level <- tv1.level
+        tv1.link <- Some ty2
+    | Tvar tv, _ -> 
+        occur tv ty2
+        tv.link <- Some ty2
+    | _, Tvar tv -> 
+        occur tv ty1
+        tv.link <- Some ty1
+    | Tarrow(_, t1, t2), Tarrow(_, u1, u2) -> 
+        unify tyenv t1 u1
+        unify tyenv t2 u2
+    | Ttuple tl1, Ttuple tl2 -> 
+        if List.length tl1 <> List.length tl2 then raise Unify
+        List.iter2 (unify tyenv) tl1 tl2
+    | Tconstr(id1, tl1), Tconstr(id2, tl2) when id1 = id2 -> List.iter2 (unify tyenv) tl1 tl2
+    | _ ->
+        match expand tyenv ty1 with
+        | Some ty1 -> unify tyenv ty1 ty2
+        | None ->
+            match expand tyenv ty2 with
+            | Some ty2 -> unify tyenv ty1 ty2
+            | None -> raise Unify
+
+
