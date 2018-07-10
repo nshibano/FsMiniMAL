@@ -89,7 +89,6 @@ open ParseHelper
 %nonassoc prec_if
 %nonassoc ELSE BAR
 %right COLONEQUAL
-%left  COMMA
 %left  BARBAR
 %left  AMPERSANDAMPERSAND
 %left  INFIX0 EQUAL EQUALEQUAL          /* comparisons */
