@@ -65,7 +65,7 @@ and main =
   | ['@' '^'] | "^^"                         { INFIX1(lexeme_string lexbuf) }
   | "+" | "+."                               { INFIX2(lexeme_string lexbuf) }
   | "%"
-  | "*" | "*."
+  | "*."
   | "/" | "/."
   | "&&&" | "|||"
   | "^^^" 
