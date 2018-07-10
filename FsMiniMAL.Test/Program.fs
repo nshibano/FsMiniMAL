@@ -96,6 +96,7 @@ let main argv =
     case "false" "false"
     case "1" "1"
     case "-1" "-1"
+    case int_min int_min
     case "1.0" "1.0"
     case "nan" "nan"
     
