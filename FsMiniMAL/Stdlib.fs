@@ -199,11 +199,11 @@ let add_stdlib (tyenv : tyenv) (genv : value array) (alloc : Allocator) =
         array_append rt a b
     add_func "^" (arrow2 (ty_array a) (ty_array a) (ty_array a)) 2 array_append_func
 
+    let ty_sss = arrow2 ty_string ty_string ty_string
     let string_append_func (rt : runtime) (argv : value array) =
         of_string rt (to_string argv.[0] + to_string argv.[1])
-    add_func "string_append" (arrow2 ty_string ty_string ty_string) 2 string_append_func
-
-    add_func "^^" (arrow2 ty_string ty_string ty_string) 2 string_append_func
+    add_func "string_append" ty_sss 2 string_append_func
+    add_func "^^" ty_sss 2 string_append_func
 
     let array_get_func (rt : runtime) (argv : value array) =
         match argv.[0] with
@@ -216,25 +216,24 @@ let add_stdlib (tyenv : tyenv) (genv : value array) (alloc : Allocator) =
             try array_get rt (argv.[0]) (to_int argv.[1])
             with :? IndexOutOfRangeException -> mal_raise_IndexOutOfRange()
         | _ -> dontcare()
+    let ty_array_get = arrow2 (ty_array a) ty_int a
+    add_func ".[]" ty_array_get 2 array_get_func
+    add_func "array_get" ty_array_get 2 array_get_func
 
     let array_set_func (g : runtime) (argv : value array) =
         try
             array_set argv.[0] (to_int argv.[1]) argv.[2];
             Value.unit
         with :? IndexOutOfRangeException -> mal_raise_IndexOutOfRange ()
-
-    add_func ".[]" (arrow2 (ty_array a) ty_int a) 2 array_get_func
-    add_func "array_get" (arrow2 (ty_array a) ty_int a) 2 array_get_func
-
-    add_func ".[]<-" (arrow3 (ty_array a) ty_int a ty_unit) 3 array_set_func
-    add_func "array_set" (arrow3 (ty_array a) ty_int a ty_unit) 3 array_set_func
+    let ty_array_set = arrow3 (ty_array a) ty_int a ty_unit
+    add_func ".[]<-" ty_array_set 3 array_set_func
+    add_func "array_set" ty_array_set 3 array_set_func
 
     let array_length_func (g : runtime) argv =
         match argv with
         | [| Varray a |] -> of_int g a.count
         | _ -> dontcare()
     add_func "array_length" (arrow (ty_array a) ty_int) 1 array_length_func
-
 
     let array_copy_func (rt : runtime) (argv : value array) =
         array_copy rt argv.[0]
