@@ -285,7 +285,7 @@ let trans : uint16[] array =
     (* State 136 *)
      [| 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 65535us; 136us; 136us; 65535us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 136us; 65535us; |];
     |] 
-let actions : uint16[] = [|65535us; 0us; 2us; 3us; 4us; 1us; 65535us; 0us; 1us; 7us; 6us; 7us; 2us; 2us; 3us; 65535us; 65535us; 65535us; 65535us; 65535us; 5us; 65535us; 4us; 2us; 65535us; 6us; 6us; 5us; 6us; 6us; 65535us; 65535us; 65535us; 65535us; 65535us; 65535us; 65535us; 4us; 65535us; 65535us; 3us; 2us; 1us; 1us; 5us; 0us; 65535us; 0us; 1us; 2us; 65535us; 0us; 4us; 4us; 3us; 4us; 2us; 1us; 65535us; 0us; 1us; 2us; 3us; 3us; 5us; 36us; 7us; 12us; 42us; 30us; 11us; 13us; 14us; 15us; 33us; 17us; 18us; 20us; 35us; 23us; 25us; 27us; 28us; 29us; 32us; 42us; 35us; 36us; 37us; 38us; 38us; 41us; 42us; 38us; 40us; 37us; 36us; 35us; 65535us; 65535us; 34us; 26us; 24us; 21us; 65535us; 19us; 22us; 16us; 33us; 39us; 10us; 31us; 9us; 8us; 6us; 3us; 65535us; 4us; 4us; 4us; 65535us; 4us; 65535us; 65535us; 65535us; 3us; 3us; 3us; 3us; 3us; 3us; 2us; 1us; 1us; 65535us; 0us; 0us; |]
+let actions : uint16[] = [|65535us; 0us; 2us; 3us; 4us; 1us; 65535us; 0us; 1us; 7us; 6us; 7us; 2us; 2us; 3us; 65535us; 65535us; 65535us; 65535us; 65535us; 5us; 65535us; 4us; 2us; 65535us; 6us; 6us; 5us; 6us; 6us; 65535us; 65535us; 65535us; 65535us; 65535us; 65535us; 65535us; 4us; 65535us; 65535us; 3us; 2us; 1us; 1us; 5us; 0us; 65535us; 0us; 1us; 2us; 65535us; 0us; 4us; 4us; 3us; 4us; 2us; 1us; 65535us; 0us; 1us; 2us; 3us; 3us; 5us; 37us; 7us; 12us; 43us; 31us; 11us; 13us; 14us; 15us; 34us; 17us; 18us; 20us; 36us; 24us; 26us; 28us; 29us; 30us; 33us; 43us; 36us; 37us; 38us; 39us; 39us; 42us; 43us; 39us; 41us; 38us; 37us; 36us; 65535us; 65535us; 35us; 27us; 25us; 21us; 23us; 19us; 22us; 16us; 34us; 40us; 10us; 32us; 9us; 8us; 6us; 3us; 65535us; 4us; 4us; 4us; 65535us; 4us; 65535us; 65535us; 65535us; 3us; 3us; 3us; 3us; 3us; 3us; 2us; 1us; 1us; 65535us; 0us; 0us; |]
 let _fslex_tables = FsMiniMAL.Lexing.UnicodeTables.Create(trans,actions)
 let rec _fslex_dummy () = _fslex_dummy() 
 (* Rule skip_sb *)
@@ -437,290 +437,295 @@ and _fslex_main  _fslex_state lexbuf =
           )
   | 23 -> ( 
 # 50 "Lexer.fsl"
-                                                              EQUAL 
+                                                              LESSLESS 
 # 441 "Lexer.fs"
           )
   | 24 -> ( 
 # 51 "Lexer.fsl"
-                                                              EQUALEQUAL 
+                                                              EQUAL 
 # 446 "Lexer.fs"
           )
   | 25 -> ( 
 # 52 "Lexer.fsl"
-                                                              LBRACKET 
+                                                              EQUALEQUAL 
 # 451 "Lexer.fs"
           )
   | 26 -> ( 
 # 53 "Lexer.fsl"
-                                                              LBRACKETBAR 
+                                                              LBRACKET 
 # 456 "Lexer.fs"
           )
   | 27 -> ( 
 # 54 "Lexer.fsl"
-                                                              RBRACKET 
+                                                              LBRACKETBAR 
 # 461 "Lexer.fs"
           )
   | 28 -> ( 
 # 55 "Lexer.fsl"
-                                                              UNDERSCORE 
+                                                              RBRACKET 
 # 466 "Lexer.fs"
           )
   | 29 -> ( 
 # 56 "Lexer.fsl"
-                                                              LBRACE 
+                                                              UNDERSCORE 
 # 471 "Lexer.fs"
           )
   | 30 -> ( 
 # 57 "Lexer.fsl"
-                                                              BAR 
+                                                              LBRACE 
 # 476 "Lexer.fs"
           )
   | 31 -> ( 
 # 58 "Lexer.fsl"
-                                                              BARRBRACKET 
+                                                              BAR 
 # 481 "Lexer.fs"
           )
   | 32 -> ( 
 # 59 "Lexer.fsl"
-                                                              RBRACE 
+                                                              BARRBRACKET 
 # 486 "Lexer.fs"
           )
   | 33 -> ( 
 # 60 "Lexer.fsl"
-                                                              SUBTRACTIVE (lexeme_string lexbuf) 
+                                                              RBRACE 
 # 491 "Lexer.fs"
           )
   | 34 -> ( 
 # 61 "Lexer.fsl"
-                                                              TILDETILDETILDE 
+                                                              SUBTRACTIVE (lexeme_string lexbuf) 
 # 496 "Lexer.fs"
           )
   | 35 -> ( 
-# 64 "Lexer.fsl"
-                                                              INFIX0(lexeme_string lexbuf) 
+# 62 "Lexer.fsl"
+                                                              TILDETILDETILDE 
 # 501 "Lexer.fs"
           )
   | 36 -> ( 
 # 65 "Lexer.fsl"
-                                                              INFIX1(lexeme_string lexbuf) 
+                                                              INFIX0(lexeme_string lexbuf) 
 # 506 "Lexer.fs"
           )
   | 37 -> ( 
 # 66 "Lexer.fsl"
-                                                              INFIX2(lexeme_string lexbuf) 
+                                                              INFIX1(lexeme_string lexbuf) 
 # 511 "Lexer.fs"
           )
   | 38 -> ( 
-# 72 "Lexer.fsl"
-                                                              INFIX3(lexeme_string lexbuf) 
+# 67 "Lexer.fsl"
+                                                              INFIX2(lexeme_string lexbuf) 
 # 516 "Lexer.fs"
           )
   | 39 -> ( 
 # 73 "Lexer.fsl"
-                                                              INFIX4(lexeme_string lexbuf) 
+                                                              INFIX3(lexeme_string lexbuf) 
 # 521 "Lexer.fs"
           )
   | 40 -> ( 
 # 74 "Lexer.fsl"
-                                                              eol_comment lexbuf.StartPos lexbuf 
+                                                              INFIX4(lexeme_string lexbuf) 
 # 526 "Lexer.fs"
           )
   | 41 -> ( 
 # 75 "Lexer.fsl"
-                                                              EOF 
+                                                              eol_comment lexbuf.StartPos lexbuf 
 # 531 "Lexer.fs"
           )
   | 42 -> ( 
 # 76 "Lexer.fsl"
-                                                              raise (Lexical_error Illegal_character) 
+                                                              EOF 
 # 536 "Lexer.fs"
+          )
+  | 43 -> ( 
+# 77 "Lexer.fsl"
+                                                              raise (Lexical_error Illegal_character) 
+# 541 "Lexer.fs"
           )
   | _ -> failwith "main"
 (* Rule comment *)
 and _fslex_comment start_pos depth _fslex_state lexbuf =
   match _fslex_tables.Interpret(_fslex_state,lexbuf) with
   | 0 -> ( 
-# 79 "Lexer.fsl"
+# 80 "Lexer.fsl"
                              lexbuf.NewLine()
                              comment start_pos depth lexbuf 
-# 546 "Lexer.fs"
-          )
-  | 1 -> ( 
-# 81 "Lexer.fsl"
-                             comment start_pos (depth + 1) lexbuf 
 # 551 "Lexer.fs"
           )
-  | 2 -> ( 
+  | 1 -> ( 
 # 82 "Lexer.fsl"
+                             comment start_pos (depth + 1) lexbuf 
+# 556 "Lexer.fs"
+          )
+  | 2 -> ( 
+# 83 "Lexer.fsl"
                              if depth = 1 then
                                mark_as_comments lexbuf start_pos lexbuf.EndPos
                                main lexbuf
                              else
                                comment start_pos (depth - 1) lexbuf 
-# 560 "Lexer.fs"
+# 565 "Lexer.fs"
           )
   | 3 -> ( 
-# 87 "Lexer.fsl"
+# 88 "Lexer.fsl"
                              mark_as_comments lexbuf start_pos lexbuf.StartPos
                              raise(Lexical_error Unterminated_comment) 
-# 566 "Lexer.fs"
+# 571 "Lexer.fs"
           )
   | 4 -> ( 
-# 89 "Lexer.fsl"
+# 90 "Lexer.fsl"
                              comment start_pos depth lexbuf 
-# 571 "Lexer.fs"
+# 576 "Lexer.fs"
           )
   | _ -> failwith "comment"
 (* Rule eol_comment *)
 and _fslex_eol_comment start _fslex_state lexbuf =
   match _fslex_tables.Interpret(_fslex_state,lexbuf) with
   | 0 -> ( 
-# 92 "Lexer.fsl"
-                             lexbuf.NewLine(); mark_as_comments lexbuf start lexbuf.EndPos; main lexbuf 
-# 580 "Lexer.fs"
-          )
-  | 1 -> ( 
 # 93 "Lexer.fsl"
-                             mark_as_comments lexbuf start lexbuf.StartPos; EOF 
+                             lexbuf.NewLine(); mark_as_comments lexbuf start lexbuf.EndPos; main lexbuf 
 # 585 "Lexer.fs"
           )
-  | 2 -> ( 
+  | 1 -> ( 
 # 94 "Lexer.fsl"
-                             eol_comment start lexbuf 
+                             mark_as_comments lexbuf start lexbuf.StartPos; EOF 
 # 590 "Lexer.fs"
+          )
+  | 2 -> ( 
+# 95 "Lexer.fsl"
+                             eol_comment start lexbuf 
+# 595 "Lexer.fs"
           )
   | _ -> failwith "eol_comment"
 (* Rule char_or_var *)
 and _fslex_char_or_var start_pos _fslex_state lexbuf =
   match _fslex_tables.Interpret(_fslex_state,lexbuf) with
   | 0 -> ( 
-# 97 "Lexer.fsl"
+# 98 "Lexer.fsl"
                                                          lexbuf.NewLine()
                                                          lexbuf.StartPos <- start_pos;
                                                          CHAR (lexbuf.LexemeChar(0)) 
-# 601 "Lexer.fs"
+# 606 "Lexer.fs"
           )
   | 1 -> ( 
-# 100 "Lexer.fsl"
+# 101 "Lexer.fsl"
                                                          lexbuf.StartPos <- start_pos;
                                                          CHAR (lexbuf.LexemeChar(0)) 
-# 607 "Lexer.fs"
+# 612 "Lexer.fs"
           )
   | 2 -> ( 
-# 102 "Lexer.fsl"
+# 103 "Lexer.fsl"
                                                          lexbuf.StartPos <- start_pos;
                                                          CHAR ((char_for_backslash (lexbuf.LexemeChar(1)))) 
-# 613 "Lexer.fs"
+# 618 "Lexer.fs"
           )
   | 3 -> ( 
-# 104 "Lexer.fsl"
+# 105 "Lexer.fsl"
                                                          lexbuf.StartPos <- start_pos;
                                                          CHAR (char_for_dec3_code lexbuf) 
-# 619 "Lexer.fs"
+# 624 "Lexer.fs"
           )
   | 4 -> ( 
-# 106 "Lexer.fsl"
+# 107 "Lexer.fsl"
                                                          lexbuf.StartPos <- start_pos;
                                                          CHAR (char_for_hex4_code lexbuf) 
-# 625 "Lexer.fs"
+# 630 "Lexer.fs"
           )
   | 5 -> ( 
-# 108 "Lexer.fsl"
+# 109 "Lexer.fsl"
                                                          lexbuf.StartPos <- start_pos;
                                                          QUOTED (String(lexbuf.Lexeme)) 
-# 631 "Lexer.fs"
+# 636 "Lexer.fs"
           )
   | 6 -> ( 
-# 111 "Lexer.fsl"
+# 112 "Lexer.fsl"
                                                          raise (Lexical_error Illegal_character) 
-# 636 "Lexer.fs"
+# 641 "Lexer.fs"
           )
   | _ -> failwith "char_or_var"
 (* Rule string *)
 and _fslex_string start_pos buf _fslex_state lexbuf =
   match _fslex_tables.Interpret(_fslex_state,lexbuf) with
   | 0 -> ( 
-# 114 "Lexer.fsl"
+# 115 "Lexer.fsl"
                                                                        lexbuf.NewLine()
                                                                        (buf : StringBuilder).Add('\n')
                                                                        string start_pos buf lexbuf 
-# 647 "Lexer.fs"
+# 652 "Lexer.fs"
           )
   | 1 -> ( 
-# 117 "Lexer.fsl"
+# 118 "Lexer.fsl"
                                                                        lexbuf.StartPos <- start_pos
                                                                        STRING ((buf : StringBuilder).ToString()) 
-# 653 "Lexer.fs"
-          )
-  | 2 -> ( 
-# 119 "Lexer.fsl"
-                                                                       string start_pos buf lexbuf 
 # 658 "Lexer.fs"
           )
-  | 3 -> ( 
+  | 2 -> ( 
 # 120 "Lexer.fsl"
+                                                                       string start_pos buf lexbuf 
+# 663 "Lexer.fs"
+          )
+  | 3 -> ( 
+# 121 "Lexer.fsl"
                                                                        (buf : StringBuilder).Add(char_for_backslash(lexbuf.Lexeme.[1]))
                                                                        string start_pos buf lexbuf 
-# 664 "Lexer.fs"
+# 669 "Lexer.fs"
           )
   | 4 -> ( 
-# 122 "Lexer.fsl"
+# 123 "Lexer.fsl"
                                                                        (buf : StringBuilder).Add(char_for_dec3_code lexbuf);
                                                                        string start_pos buf lexbuf 
-# 670 "Lexer.fs"
+# 675 "Lexer.fs"
           )
   | 5 -> ( 
-# 124 "Lexer.fsl"
+# 125 "Lexer.fsl"
                                                                        (buf : StringBuilder).Add(char_for_hex4_code lexbuf)
                                                                        string start_pos buf lexbuf 
-# 676 "Lexer.fs"
+# 681 "Lexer.fs"
           )
   | 6 -> ( 
-# 126 "Lexer.fsl"
+# 127 "Lexer.fsl"
                                                                        lexbuf.StartPos <- start_pos
                                                                        raise (Lexical_error Unterminated_string) 
-# 682 "Lexer.fs"
+# 687 "Lexer.fs"
           )
   | 7 -> ( 
-# 128 "Lexer.fsl"
+# 129 "Lexer.fsl"
                                                                        (buf : StringBuilder).Add(lexbuf.Lexeme.[0]);
                                                                        string start_pos buf lexbuf 
-# 688 "Lexer.fs"
+# 693 "Lexer.fs"
           )
   | _ -> failwith "string"
 (* Rule verbatim_string *)
 and _fslex_verbatim_string start_pos buf _fslex_state lexbuf =
   match _fslex_tables.Interpret(_fslex_state,lexbuf) with
   | 0 -> ( 
-# 132 "Lexer.fsl"
+# 133 "Lexer.fsl"
                              lexbuf.NewLine()
                              (buf : StringBuilder).Add('\n')
                              verbatim_string start_pos buf lexbuf 
-# 699 "Lexer.fs"
+# 704 "Lexer.fs"
           )
   | 1 -> ( 
-# 135 "Lexer.fsl"
+# 136 "Lexer.fsl"
                              (buf : StringBuilder).Add('\034')
                              verbatim_string start_pos buf lexbuf 
-# 705 "Lexer.fs"
+# 710 "Lexer.fs"
           )
   | 2 -> ( 
-# 137 "Lexer.fsl"
+# 138 "Lexer.fsl"
                              lexbuf.StartPos <- start_pos
                              STRING ((buf : StringBuilder).ToString()) 
-# 711 "Lexer.fs"
+# 716 "Lexer.fs"
           )
   | 3 -> ( 
-# 139 "Lexer.fsl"
+# 140 "Lexer.fsl"
                              lexbuf.StartPos <- start_pos;
                              raise (Lexical_error Unterminated_string) 
-# 717 "Lexer.fs"
+# 722 "Lexer.fs"
           )
   | 4 -> ( 
-# 141 "Lexer.fsl"
+# 142 "Lexer.fsl"
                              (buf : StringBuilder).Add(lexbuf.Lexeme.[0])
                              verbatim_string start_pos buf lexbuf 
-# 723 "Lexer.fs"
+# 728 "Lexer.fs"
           )
   | _ -> failwith "verbatim_string"
 

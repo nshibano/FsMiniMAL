@@ -317,6 +317,7 @@ let add_stdlib (tyenv : tyenv) (genv : value array) (alloc : Allocator) =
             Value.unit
         | _ -> dontcare()
     add_func "array_add" (arrow2 (ty_array a) a ty_unit) 2 array_add_func
+    add_func "<<" (arrow2 (ty_array a) a ty_unit) 2 array_add_func
 
     let array_remove_at_func (rt : runtime) (argv : value array) =
         try

@@ -47,6 +47,7 @@ and main =
   | ";"                                      { SEMI }
   | "<-"                                     { LESSMINUS }
   | ":="                                     { COLONEQUAL }
+  | "<<"                                     { LESSLESS }
   | "="                                      { EQUAL }
   | "=="                                     { EQUALEQUAL }
   | "["                                      { LBRACKET }

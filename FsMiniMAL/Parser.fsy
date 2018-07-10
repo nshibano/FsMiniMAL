@@ -43,6 +43,7 @@ open ParseHelper
 %token LBRACKETBAR                 /* [|  */
 %token LESSMINUS                   /* <-  */
 %token COLONEQUAL                  /* :=  */
+%token LESSLESS                    /* <<  */
 %token RBRACKET                    /* ]   */
 %token UNDERSCORE                  /* _   */
 %token LBRACE                      /* {   */
@@ -88,7 +89,7 @@ open ParseHelper
 
 %nonassoc prec_if
 %nonassoc ELSE BAR
-%right COLONEQUAL
+%right COLONEQUAL LESSLESS
 %left  BARBAR
 %left  AMPERSANDAMPERSAND
 %left  INFIX0 EQUAL EQUALEQUAL          /* comparisons */
@@ -180,6 +181,7 @@ Expression :
     | Expression BARBAR Expression                                                     { make_binop parseState "||" $1 $3 }
     | Expression COLONCOLON Expression                                                 { make_unop parseState "::" (make_expr parseState (SEtuple [$1;$3])) }
     | Expression COLONEQUAL Expression                                                 { make_binop parseState ":=" $1 $3 }
+    | Expression LESSLESS Expression                                                   { make_binop parseState "<<" $1 $3 }
     | Expression_1                                                                     { $1 }
 
 Expression_1 :
