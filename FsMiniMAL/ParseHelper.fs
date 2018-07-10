@@ -61,8 +61,8 @@ let make_minus_expr (ps : IParseState) op e =
     | "-", { se_desc = SEint i } -> make_expr ps (SEint(make_minus i))
     | _ -> 
         make_unop ps (match op with
-                      | "-" -> "~"
-                      | "-." -> "~."
+                      | "-" -> "~-"
+                      | "-." -> "~-."
                       | _ -> dontcare ()) e
 
 

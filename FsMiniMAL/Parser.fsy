@@ -16,6 +16,7 @@ open ParseHelper
 %token <string> SUBTRACTIVE
 %token <string> INFIX3
 %token <string> INFIX4
+%token <string> UNARY
 
 /* Literals */
 %token <string> INT
@@ -52,7 +53,6 @@ open ParseHelper
 %token BARRBRACKET                 /* |]  */
 %token RBRACE                      /* }   */
 %token EXCLAMATION                 /* !   */
-%token TILDETILDETILDE             /* ~~~ */
 
 /* Keywords */
 %token AND
@@ -167,7 +167,7 @@ Expression :
     | TRY Expression CATCH Opt_bar Matching_list                                       { make_expr parseState (SEtry ($2, $5)) }
     | FUNCT Matching_list                                                              { make_expr parseState (SEfn ([make_pat parseState (SPid "$")], make_expr parseState (SEcase (make_expr parseState (SEid "$"), $2)))) }
     | SUBTRACTIVE Expression %prec prec_uminus                                         { make_minus_expr parseState $1 $2 }
-    | TILDETILDETILDE Expression %prec prec_uminus                                     { make_unop parseState "~~~" $2 }
+    | UNARY Expression %prec prec_uminus                                               { make_unop parseState $1 $2 }
     | Expression INFIX4 Expression                                                     { make_binop parseState $2 $1 $3 }
     | Expression INFIX3 Expression                                                     { make_binop parseState $2 $1 $3 }
     | Expression INFIX2 Expression                                                     { make_binop parseState $2 $1 $3 }
@@ -201,7 +201,7 @@ Expression_2:
     | Expression_2 DOT IDENT                          { make_expr parseState (SEgetfield ($1, $3)) }
     | Expression_2 DOT LBRACKET Expression RBRACKET   { make_binop parseState ".[]" $1 $4 }
     | LPAREN Expression_comma_list RPAREN             { match $2 with [e] -> e | l -> make_expr parseState (SEtuple l) }
-    | LPAREN Infx RPAREN                              { make_ident parseState $2 }
+    | LPAREN Operator RPAREN                              { make_ident parseState $2 }
     | LBRACKETBAR Expression_comma_list BARRBRACKET   { make_expr parseState (SEarray $2) }
     | LBRACKET Expression_comma_list RBRACKET         { List.foldBack (fun a l -> make_unop parseState "::" (make_expr parseState (SEtuple [a;l]))) $2 (make_ident parseState "[]") }
     | LBRACE Label_expr_list RBRACE                   { make_expr parseState (SErecord (None, $2)) }
@@ -290,21 +290,22 @@ Pattern_may_type :
     | Pattern COLON Type_expr { make_pat parseState (SPtype ($1, $3)) }
     | Pattern                 { $1 }
 
-Infx :
+Operator :
     | INFIX0             { $1 }
     | INFIX1             { $1 }    
     | INFIX2             { $1 }
     | INFIX3             { $1 }    
     | INFIX4             { $1 }
+    | SUBTRACTIVE        { $1 }
+    | UNARY              { $1 }
     | STAR               { "*" }   
     | EQUAL              { "=" }   
-    | SUBTRACTIVE        { $1 }
     | AMPERSANDAMPERSAND { "&&" }   
     | BARBAR             { "||" }
     | EQUALEQUAL         { "==" }
     | COLONEQUAL         { ":=" }
     | EXCLAMATION        { "!" }
-	| LESSLESS           { "<<" }
+    | LESSLESS           { "<<" }
 
 /* Type expressions */
 

@@ -157,7 +157,7 @@ let add_stdlib (tyenv : tyenv) (genv : value array) (alloc : Allocator) =
     add_iii "*" ( * )
     add_iii "/" (fun a b -> if b <> 0 then a / b else mal_raise_DivisionByZero ())
     add_iii "%" (fun a b -> if b <> 0 then a % b else mal_raise_DivisionByZero ())
-    add_ii "~" ( ~- )
+    add_ii "~-" ( ~- )
     add_ii "~~~" ( ~~~ )
     add_iii "|||" ( ||| )
     add_iii "^^^" ( ^^^ )
@@ -169,7 +169,7 @@ let add_stdlib (tyenv : tyenv) (genv : value array) (alloc : Allocator) =
     add_fff "*." ( * )
     add_fff "/." ( / )
     add_fff "**" ( ** )
-    add_ff "~." ( ~- )
+    add_ff "~-." ( ~- )
 
     let not_func (g : runtime) argv =
         match argv with

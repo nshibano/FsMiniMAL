@@ -506,8 +506,8 @@ let type_printf_cmds cmds ty_result =
 
 let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary<string, type_expr>) (current_level : int) (ty_expected : type_expr option) (e : expression) =
     match e.se_desc with
-    | SEid (("+" | "-" | "*" | "/" | "~") as op) ->
-        let ty_float_result, ty_int_result = if op = "~" then ty_ff, ty_ii else ty_fff, ty_iii
+    | SEid (("+" | "-" | "*" | "/" | "~-") as op) ->
+        let ty_float_result, ty_int_result = if op = "~-" then ty_ff, ty_ii else ty_fff, ty_iii
         match ty_expected with
         | Some ty_expected when same_type tyenv ty_expected ty_float_result ->
             e.se_desc <- SEid (op + ".")
@@ -639,10 +639,10 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
                     ty_res
                 else raise (Type_error(Constructor_used_with_wrong_number_of_arguments (s, ty_args.Length, el.Length), e1.se_loc))
             | _, _ -> raise (Type_error(Constructor_used_with_wrong_number_of_arguments (s, ty_args.Length, 1), e1.se_loc))
-    | SEapply (({ se_desc = SEid (("+" | "-" | "*" | "/" | "~") as op) } as e_op), el_args) when let op_arity = if op = "~" then 1 else 2
+    | SEapply (({ se_desc = SEid (("+" | "-" | "*" | "/" | "~-") as op) } as e_op), el_args) when let op_arity = if op = "~-" then 1 else 2
                                                                                                  let el_args_len = el_args.Length
                                                                                                  op_arity - el_args_len >= 0 ->
-        let op_arity = if op = "~" then 1 else 2
+        let op_arity = if op = "~-" then 1 else 2
         let el_args_len = el_args.Length
         let ty_float_res, ty_int_res =
             if op_arity - el_args_len = 0 then

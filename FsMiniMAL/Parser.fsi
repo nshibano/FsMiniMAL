@@ -30,7 +30,6 @@ type token =
   | BEGIN
   | AS
   | AND
-  | TILDETILDETILDE
   | EXCLAMATION
   | RBRACE
   | BARRBRACKET
@@ -61,6 +60,7 @@ type token =
   | FLOAT of (float)
   | CHAR of (char)
   | INT of (string)
+  | UNARY of (string)
   | INFIX4 of (string)
   | INFIX3 of (string)
   | SUBTRACTIVE of (string)
@@ -99,7 +99,6 @@ type tokenId =
     | TOKEN_BEGIN
     | TOKEN_AS
     | TOKEN_AND
-    | TOKEN_TILDETILDETILDE
     | TOKEN_EXCLAMATION
     | TOKEN_RBRACE
     | TOKEN_BARRBRACKET
@@ -130,6 +129,7 @@ type tokenId =
     | TOKEN_FLOAT
     | TOKEN_CHAR
     | TOKEN_INT
+    | TOKEN_UNARY
     | TOKEN_INFIX4
     | TOKEN_INFIX3
     | TOKEN_SUBTRACTIVE
@@ -172,7 +172,7 @@ type nonTerminalId =
     | NONTERM_Label_pattern_list
     | NONTERM_Pattern_comma_list
     | NONTERM_Pattern_may_type
-    | NONTERM_Infx
+    | NONTERM_Operator
     | NONTERM_Type_expr
     | NONTERM_Type_star_list
     | NONTERM_Simple_type

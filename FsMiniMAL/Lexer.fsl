@@ -59,7 +59,7 @@ and main =
   | "|]"                                     { BARRBRACKET }
   | "}"                                      { RBRACE }
   | "-" | "-."                               { SUBTRACTIVE (lexeme_string lexbuf) }
-  | "~~~"                                    { TILDETILDETILDE }
+  | "~-" | "~-." | "~~~"                     { UNARY (lexeme_string lexbuf) }
   | "!="
   | "<>"
   | ['<' '>'] '=' ?                          { INFIX0(lexeme_string lexbuf) }
