@@ -69,8 +69,8 @@ and main =
   | "*."
   | "/" | "/."
   | "&&&" | "|||"
-  | "^^^" 
-  | ">>>" | "<<<"                            { INFIX3(lexeme_string lexbuf) }
+  | "^^^"                                    { INFIX3(lexeme_string lexbuf) }
+  | ">>>" | "<<<"                            
   | "**"                                     { INFIX4(lexeme_string lexbuf) }
   | "//"                                     { eol_comment lexbuf.StartPos lexbuf }
   | eof                                      { EOF }

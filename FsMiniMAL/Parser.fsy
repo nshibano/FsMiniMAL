@@ -90,8 +90,8 @@ open ParseHelper
 %nonassoc prec_if
 %nonassoc ELSE BAR
 %right COLONEQUAL LESSLESS
-%left  BARBAR
-%left  AMPERSANDAMPERSAND
+%right  BARBAR
+%right  AMPERSANDAMPERSAND
 %left  INFIX0 EQUAL EQUALEQUAL          /* comparisons */
 %right INFIX1                           /* concatenations */
 %right COLONCOLON                       /* cons */
@@ -304,6 +304,7 @@ Infx :
     | EQUALEQUAL         { "==" }
     | COLONEQUAL         { ":=" }
     | EXCLAMATION        { "!" }
+	| LESSLESS           { "<<" }
 
 /* Type expressions */
 
