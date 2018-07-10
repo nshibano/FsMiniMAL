@@ -150,7 +150,6 @@ type nonTerminalId =
     | NONTERM_Equation
     | NONTERM_Expression_def
     | NONTERM_Expression
-    | NONTERM_Expression_0
     | NONTERM_Expression_1
     | NONTERM_Expression_2_list
     | NONTERM_Expression_2
