@@ -45,7 +45,7 @@ let main argv =
             f.Flush()) history
 
         if isNull s then
-            Console.WriteLine()
+            exit 0
         else
             lock mal (fun () -> mal.Start(s))
 
