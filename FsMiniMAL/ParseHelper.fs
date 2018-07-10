@@ -63,8 +63,7 @@ let make_minus_expr (ps : IParseState) op e =
         make_unop ps (match op with
                       | "-" -> "~"
                       | "-." -> "~."
-                      | "-.." -> "~.."
-                      | _ -> "~") e
+                      | _ -> dontcare ()) e
 
 
 let mark_as_typename (ps : IParseState) i =

@@ -99,6 +99,8 @@ open ParseHelper
 %left  STAR INFIX3                      /* multiplicatives */
 %right INFIX4                           /* exponentiations */
 %nonassoc prec_uminus
+
+%nonassoc prec_deref
 %left  DOT
 
 /* Entry point */
@@ -194,15 +196,15 @@ Expression_2:
     | INT                                             { make_expr parseState (SEint $1) }
     | CHAR                                            { make_expr parseState (SEchar $1) }
     | FLOAT                                           { make_expr parseState (SEfloat $1) }
+    | EXCLAMATION Expression_2 %prec prec_deref       { make_unop parseState "!" $2 }
+    | Expression_2 DOT IDENT                          { make_expr parseState (SEgetfield ($1, $3)) }
+    | Expression_2 DOT LBRACKET Expression RBRACKET   { make_binop parseState ".[]" $1 $4 }
     | LPAREN Expression_comma_list RPAREN             { match $2 with [e] -> e | l -> make_expr parseState (SEtuple l) }
     | LPAREN Infx RPAREN                              { make_ident parseState $2 }
     | LBRACKETBAR Expression_comma_list BARRBRACKET   { make_expr parseState (SEarray $2) }
     | LBRACKET Expression_comma_list RBRACKET         { List.foldBack (fun a l -> make_unop parseState "::" (make_expr parseState (SEtuple [a;l]))) $2 (make_ident parseState "[]") }
     | LBRACE Label_expr_list RBRACE                   { make_expr parseState (SErecord (None, $2)) }
     | LBRACE Expression_1 WITH Label_expr_list RBRACE { make_expr parseState (SErecord (Some $2, $4)) }
-    | EXCLAMATION Expression_2 %prec prec_uminus      { make_unop parseState "!" $2 }
-    | Expression_2 DOT IDENT                          { make_expr parseState (SEgetfield ($1, $3)) }
-    | Expression_2 DOT LBRACKET Expression RBRACKET   { make_binop parseState ".[]" $1 $4 }
     | BEGIN Command_list Opt_semi END                 { make_expr parseState (SEbegin (List.rev $2)) }
     | BEGIN END                                       { make_expr parseState (SEbegin []) }
 
