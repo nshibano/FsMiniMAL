@@ -367,10 +367,19 @@ let rec pattern tyenv (type_vars : Dictionary<string, type_expr>) (current_level
     | SPfloat _ -> ty_float, []
     | SPstring _ -> ty_string, []
     | SPtuple l ->
-        let tyl, bnds = pattern_list tyenv type_vars current_level pat.sp_loc l
+        let tyl_expected =
+            match repr ty_expected with
+            | Ttuple tyl when l.Length = tyl.Length -> tyl
+            | _ -> List.init l.Length (fun _ -> new_tvar current_level)
+        let tyl, bnds = pattern_list tyenv type_vars current_level pat.sp_loc tyl_expected l
         (Ttuple tyl, bnds)
     | SParray l ->
-        let tyl, bnds = pattern_list tyenv type_vars current_level pat.sp_loc l
+        let ty_item_expected =
+            match repr ty_expected with
+            | Tconstr (type_id.ARRAY, [ty_arg]) -> ty_arg
+            | _ -> new_tvar current_level
+        let tyl_expected = List.init l.Length (fun _ -> ty_item_expected)
+        let tyl, bnds = pattern_list tyenv type_vars current_level pat.sp_loc tyl_expected l
         // Item expressions in array pattern must be same. So unify them.
         let ty_accu = new_tvar current_level
         List.iter2 (fun pat ty -> unify_pat tyenv pat ty ty_accu) l tyl;
@@ -382,20 +391,30 @@ let rec pattern tyenv (type_vars : Dictionary<string, type_expr>) (current_level
         | Some info ->
             // Create new type expression using constructor information.
             let ty_args, ty_res = instanciate_constr current_level info
+            let ty_res_id = match info.ci_res with Tconstr (id, _) -> id | _ -> dontcare ()
             match ty_args, arg with
             | [], _ ->
                 raise (Type_error(Constructor_takes_no_argument s, pat.sp_loc))
             | [ty_arg], _ ->
                 // This variant takes one argument. Therefore if argument is syntactically tuple,
                 // it is taking single argument in tuple type.
-                let ty_pat, bnds = pattern tyenv type_vars current_level ty_arg arg
+                let ty_arg_expected =
+                    match repr ty_expected with
+                    | Tconstr (id, [ty_arg_expected]) when id = ty_res_id -> ty_arg_expected
+                    | _ -> new_tvar current_level
+                let ty_pat, bnds = pattern tyenv type_vars current_level ty_arg_expected arg
                 unify_pat tyenv arg ty_pat ty_arg
                 pat.sp_desc <- SPblock (info.ci_tag, [arg])
                 (ty_res, bnds)
             | _, { sp_desc = SPtuple args } ->
                 // This variant takes multiple argument, so the argument must be syntactically tuple.
-                if List.length args = List.length ty_args then
-                    let ty_pats, bnds = pattern_list tyenv type_vars current_level pat.sp_loc args
+                if args.Length = ty_args.Length then
+                    let ty_args_expected =
+                        match repr ty_expected with
+                        | Tconstr (id, ty_args_expected) when id = ty_res_id && ty_args.Length = ty_args_expected.Length ->
+                            ty_args_expected
+                        | _ -> List.init ty_args.Length (fun _ -> new_tvar current_level)
+                    let ty_pats, bnds = pattern_list tyenv type_vars current_level pat.sp_loc ty_args_expected args
                     do_list3 (unify_pat tyenv) args ty_pats ty_args
                     pat.sp_desc <- SPblock (info.ci_tag, args)
                     (ty_res, bnds)
@@ -426,7 +445,7 @@ let rec pattern tyenv (type_vars : Dictionary<string, type_expr>) (current_level
                 | None -> raise (Type_error (Label_undefined_for_type (tyenv, lab, ty_res), field_pat.sp_loc))) l
 
         // type argument expressions
-        let ty_args, bnds = pattern_list tyenv type_vars current_level pat.sp_loc (List.map snd l)
+        let ty_args, bnds = pattern_list tyenv type_vars current_level pat.sp_loc (List.init l.Length (fun _ -> new_tvar current_level)) (List.map snd l)
 
         // unify record field type and argument type
         do_list3 (fun (_, pat) ty_arg (_, ty_field, _) -> unify_pat tyenv pat ty_arg ty_field) l ty_args used_fields
@@ -457,8 +476,8 @@ let rec pattern tyenv (type_vars : Dictionary<string, type_expr>) (current_level
         unify_pat tyenv b ty_b ty_a
         (ty_a, bnds_a)
 /// Type list of patterns. If there was duplicated name, throw type error.
-and pattern_list tyenv (type_vars : Dictionary<string, type_expr>) current_level loc patl =
-    let tyl, bndss = List.unzip (List.map (fun pat -> pattern tyenv type_vars current_level (new_tvar current_level) pat) patl)
+and pattern_list tyenv (type_vars : Dictionary<string, type_expr>) current_level loc (tyl_expected : type_expr list) (patl : Syntax.pattern list) =
+    let tyl, bndss = List.unzip (List.map2 (fun ty_expected pat -> pattern tyenv type_vars current_level ty_expected pat) tyl_expected patl)
     let bnds =
         List.foldBack (fun bnd bnds ->
             (List.iter (fun (s, _) ->
@@ -723,8 +742,8 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
     | SEfn (patl, e1) ->
         let ty_args_expected, ty_result_expected = split_last (try_filter_arrow_n tyenv current_level (patl.Length) ty_expected)
         let loc_patl = { (List.head patl).sp_loc with ed = (list_last patl).sp_loc.ed }
-        let ty_args, new_bnds = pattern_list tyenv type_vars current_level loc_patl patl
-        List.iter2 (fun ty ty_expected -> try unify tyenv ty ty_expected with Unify -> ()) ty_args ty_args_expected
+        let ty_args, new_bnds = pattern_list tyenv type_vars current_level loc_patl (List.init patl.Length (fun _ -> new_tvar current_level)) patl
+        //List.iter2 (fun ty ty_expected -> try unify tyenv ty ty_expected with Unify -> ()) ty_args ty_args_expected
         let names = List.map get_pattern_name patl
         let tyenv = add_values tyenv new_bnds
         let ty_res = expression ps tyenv type_vars current_level ty_result_expected e1
@@ -856,7 +875,7 @@ and command tyenv ps (type_vars : Dictionary<string, type_expr>) current_level (
         statement tyenv ps type_vars current_level e |> ignore
         []
     | SCval l ->
-        let ty_patl, new_bnds = pattern_list tyenv type_vars (current_level + 1) cmd.sc_loc (List.map fst l)
+        let ty_patl, new_bnds = pattern_list tyenv type_vars (current_level + 1) cmd.sc_loc (List.init l.Length (fun _ -> new_tvar current_level)) (List.map fst l)
         let l = List.map2 (fun (_, e) ty_pat -> (ty_pat, e)) l ty_patl
         List.iter (fun (ty_pat, e) -> expression_expect ps tyenv type_vars (current_level + 1) ty_pat e) l
         List.iter (fun (ty_pat, e) ->
