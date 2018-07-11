@@ -69,6 +69,8 @@ let rec all_differ loc kind definition_kind names =
 let generic_level = -1
 let global_level = 1
 
+let new_tvar level = Tvar { link = None; level = level; }
+
 let re_constructor = Regex(@"\A[A-Z][A-Za-z0-9_']*\Z")
 let is_constructor s =
     match s with
@@ -296,20 +298,20 @@ let unify_exp tyenv exp ty ty_expected =
 /// From constructor name, picks type information of variant type.
 /// If expected type is variant type and that type have definition for the used constructor name,
 /// pick that type even if the constructor is shadowed.
-let pick_constr (tyenv : tyenv) ty_expected name =
+let pick_constr (tyenv : tyenv) (ty_expected : type_expr) (name : string) =
     match tyenv.constructors.FindAll name with
     | [] -> None
     | constrs ->
-        let ci_from_ty_expected = 
-            match Option.map repr ty_expected with
-            | Some (Tconstr (id, _)) ->
+        let ci_from_ty_expected =
+            match repr ty_expected with
+            | Tconstr (id, _) ->
                 List.tryFind (function { ci_res = Tconstr (id', _) } -> id = id' | _ -> false) constrs
             | _ -> None
         match ci_from_ty_expected with
         | Some _ -> ci_from_ty_expected
         | None -> Some (List.head constrs)
 
-let rec pattern tyenv (type_vars : Dictionary<string, type_expr>) (current_level : int) (ty_expected : type_expr option) (pat : Syntax.pattern) =
+let rec pattern tyenv (type_vars : Dictionary<string, type_expr>) (current_level : int) (ty_expected : type_expr) (pat : Syntax.pattern) =
     match pat.sp_desc with
     | SPid s ->
         if is_constructor s then
@@ -360,7 +362,7 @@ let rec pattern tyenv (type_vars : Dictionary<string, type_expr>) (current_level
             | [ty_arg], _ ->
                 // This variant takes one argument. Therefore if argument is syntactically tuple,
                 // it is taking single argument in tuple type.
-                let ty_pat, bnds = pattern tyenv type_vars current_level (Some ty_arg) arg
+                let ty_pat, bnds = pattern tyenv type_vars current_level ty_arg arg
                 unify_pat tyenv arg ty_pat ty_arg
                 pat.sp_desc <- SPblock (info.ci_tag, [arg])
                 (ty_res, bnds)
@@ -377,7 +379,7 @@ let rec pattern tyenv (type_vars : Dictionary<string, type_expr>) (current_level
     | SPblock _ -> dontcare()
     | SPrecord l ->
         // Try to find record type from ty_expected
-        let id_record = Option.bind (is_record tyenv) ty_expected
+        let id_record = is_record tyenv ty_expected
 
         // If record type is still unknown, decide based on firstly seen record label.
         let id_record =
@@ -413,7 +415,7 @@ let rec pattern tyenv (type_vars : Dictionary<string, type_expr>) (current_level
     | SPany -> (Tvar { link = None; level = current_level }, [])
     | SPtype (pat, sty) ->
         let ty_res = type_expr tyenv false type_vars sty
-        let ty_pat, bnds = pattern tyenv type_vars current_level (Some ty_res) pat
+        let ty_pat, bnds = pattern tyenv type_vars current_level ty_res pat
         unify_pat tyenv pat ty_pat ty_res
         (ty_res, bnds)
     | SPor (a, b) ->
@@ -430,7 +432,7 @@ let rec pattern tyenv (type_vars : Dictionary<string, type_expr>) (current_level
         (ty_a, bnds_a)
 /// Type list of patterns. If there was duplicated name, throw type error.
 and pattern_list tyenv (type_vars : Dictionary<string, type_expr>) current_level loc patl =
-    let tyl, bndss = List.unzip (List.map (pattern tyenv type_vars current_level None) patl)
+    let tyl, bndss = List.unzip (List.map (fun pat -> pattern tyenv type_vars current_level (new_tvar current_level) pat) patl)
     let bnds =
         List.foldBack (fun bnd bnds ->
             (List.iter (fun (s, _) ->
@@ -617,7 +619,7 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
         ty_res
     | SEurecord _ -> dontcare ()
     | SEapply ((({ se_desc = SEid s } as e1)), el) when is_constructor s ->
-        match pick_constr tyenv ty_expected s with
+        match pick_constr tyenv (match ty_expected with Some ty -> ty | None -> new_tvar current_level) s with
         | None -> raise (Type_error (Constructor_undefined s, e1.se_loc))
         | Some info ->
             let ty_args, ty_res = instanciate_constr current_level info
@@ -731,7 +733,7 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
         let ty_arg = expression ps tyenv type_vars current_level None e
         let ty_res = Tvar { link = None; level = current_level }
         List.iter (fun (pat, ew, e) ->
-            let ty_pat, new_values = pattern tyenv type_vars current_level (Some ty_arg) pat
+            let ty_pat, new_values = pattern tyenv type_vars current_level ty_arg pat
             unify_pat tyenv pat ty_pat ty_arg
             let tyenv = add_values tyenv new_values
             Option.iter (fun ew -> expression_expect ps tyenv type_vars current_level ty_bool ew) ew
@@ -741,7 +743,7 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
         if not (List.forall (function (_, None, _) -> true | (_, Some _, _) -> false) cases) then raise (Type_error (Cannot_use_when_clause_in_try_construct, e.se_loc))
         let ty_arg = expression ps tyenv type_vars current_level None e
         List.iter (fun (pat, _, e) ->
-            let ty_pat, new_values = pattern tyenv type_vars current_level None pat
+            let ty_pat, new_values = pattern tyenv type_vars current_level (new_tvar current_level) pat
             unify_pat tyenv pat ty_pat ty_exn
             let tyenv = add_values tyenv new_values
             expression_expect ps tyenv type_vars current_level ty_arg e) cases
