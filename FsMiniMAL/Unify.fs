@@ -56,7 +56,7 @@ let expand (tyenv : tyenv) ty =
 /// Returns true if two types are same. This function doesn't cause side effects which changes maeaning of type expr.
 let rec same_type tyenv ty1 ty2 =
     match repr ty1, repr ty2 with
-    | Tvar a, Tvar b -> LanguagePrimitives.PhysicalEquality a b
+    | Tvar tv1, Tvar tv2 -> LanguagePrimitives.PhysicalEquality tv1 tv2
     | Tarrow (_, ty11, ty12), Tarrow (_, ty21, ty22) -> same_type tyenv ty11 ty21 && same_type tyenv ty12 ty22
     | Ttuple l1, Ttuple l2 -> l1.Length = l2.Length && List.forall2 (same_type tyenv) l1 l2
     | Tconstr (id1, l1), Tconstr (id2, l2) when id1 = id2 -> l1.Length = l2.Length && List.forall2 (same_type tyenv) l1 l2

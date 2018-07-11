@@ -108,6 +108,33 @@ let filter_arrow_n tyenv current_level n ty =
             ty1 :: (loop (n - 1) ty2)
     loop n ty
 
+/// If ty is formed as 'a -> 'b ... -> 'result with arity n, returns [ 'a; 'b; ...; 'result ].
+/// Otherwise returns list of newly created tvars.
+/// In either case, length of the returned list is n + 1. 
+let try_filter_arrow_n tyenv current_level n ty =
+    let accu = new ResizeArray<type_expr>()
+    let rec loop n ty =
+        if n = 0 then
+            accu.Add(ty)
+        else
+            match repr ty with
+            | Tarrow (_, ty1, ty2) ->
+                accu.Add(ty1)
+                loop (n - 1) ty2
+            | Tconstr _ ->
+                match expand tyenv ty with
+                | Some ty ->
+                    match repr ty with
+                    | Tarrow (_, ty1, ty2) ->
+                        accu.Add(ty1)
+                        loop (n - 1) ty2
+                    | _ -> ()
+                | None -> ()
+            | _ -> ()
+    loop n ty
+    if accu.Count = n + 1 then List.ofSeq accu
+    else List.init (n + 1) (fun _ -> new_tvar current_level)
+
 let is_tvar (ty : type_expr) =
     match repr ty with
     | Tvar _ -> true
@@ -505,15 +532,14 @@ let type_printf_cmds cmds ty_result =
         | _ -> raise PrintfFormat.InvalidFormatString
     loop cmds
 
-let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary<string, type_expr>) (current_level : int) (ty_expected : type_expr option) (e : expression) =
+let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary<string, type_expr>) (current_level : int) (ty_expected : type_expr) (e : expression) =
     match e.se_desc with
     | SEid (("+" | "-" | "*" | "/" | "~-") as op) ->
         let ty_float_result, ty_int_result = if op = "~-" then ty_ff, ty_ii else ty_fff, ty_iii
-        match ty_expected with
-        | Some ty_expected when same_type tyenv ty_expected ty_float_result ->
+        if same_type tyenv ty_expected ty_float_result then
             e.se_desc <- SEid (op + ".")
             ty_float_result
-        | _ -> ty_int_result
+        else ty_int_result
     | SEid s when is_constructor s ->
         match tyenv.constructors.TryFind(s) with
         | Some info ->
@@ -536,17 +562,17 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
     | SEfloat _ -> ty_float
     | SEtuple el ->
         let tyl_expected =
-            match Option.map repr ty_expected with
-            | Some (Ttuple tyl) when tyl.Length = el.Length -> List.map (fun ty -> Some ty) tyl
-            | _ -> List.init el.Length (fun _ -> None)
+            match repr ty_expected with
+            | Ttuple tyl when tyl.Length = el.Length -> tyl
+            | _ -> List.init el.Length (fun _ -> new_tvar current_level)
         Ttuple (List.map2 (expression ps tyenv type_vars current_level) tyl_expected el)
     | SEarray el ->
         let ty_accu = new_tvar current_level
         List.iter (expression_expect ps tyenv type_vars current_level ty_accu) el
         Tconstr (type_id.ARRAY, [ ty_accu ])
     | SEstring s ->
-        match Option.map repr ty_expected with
-        | Some (Tconstr (type_id.FORMAT, _)) ->
+        match repr ty_expected with
+        | Tconstr (type_id.FORMAT, _) ->
             let cmds =
                 try PrintfFormat.parse_fmt s
                 with PrintfFormat.InvalidFormatString -> raise (Type_error (Invalid_printf_format, e.se_loc))
@@ -573,7 +599,7 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
         let id_record =
             match id_record with
             | Some _ -> id_record
-            | None -> Option.bind (is_record tyenv) ty_expected
+            | None -> is_record tyenv ty_expected
 
         // if there is duplicate in labels, report type error
         all_differ e.se_loc kind.Label kind.Record_expression (List.map fst fields)
@@ -590,8 +616,11 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
 
         // instanciate record type
         let record_fields, ty_res = instanciate_record tyenv current_level id_record
+
+        // narrow ty_res according to ty_orig. this will not fail.
+        Option.iter (fun ty_orig -> unify tyenv ty_orig ty_res) ty_orig
         
-        // bind given firld expressions to record fields
+        // bind given field types to field expressions
         let fields =
             List.map (fun (lab, e) ->
                 match tryAssoc lab record_fields with
@@ -599,9 +628,6 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
                     (lab, idx, ty, access, e)
                 | None -> raise (Type_error (Label_undefined lab, e.se_loc))) fields
         
-        // this will not fail
-        Option.iter (fun ty_orig -> unify tyenv ty_orig ty_res) ty_orig
-
         // tests for number of given fields
         match orig, List.length fields = List.length record_fields with
         | None, false ->
@@ -618,7 +644,7 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
         ty_res
     | SEurecord _ -> dontcare ()
     | SEapply ((({ se_desc = SEid s } as e1)), el) when is_constructor s ->
-        match pick_constr tyenv (match ty_expected with Some ty -> ty | None -> new_tvar current_level) s with
+        match pick_constr tyenv ty_expected s with
         | None -> raise (Type_error (Constructor_undefined s, e1.se_loc))
         | Some info ->
             let ty_args, ty_res = instanciate_constr current_level info
@@ -650,13 +676,12 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
                 ty_float, ty_int
             else // = 1
                 ty_ff, ty_ii
-        match ty_expected with
-        | Some ty_expected when same_type tyenv ty_expected ty_float_res ->
+        if same_type tyenv ty_expected ty_float_res then
             List.iter (expression_expect ps tyenv type_vars current_level ty_float) el_args
             e_op.se_desc <- SEid (op + ".")            
             ty_float_res
-        | _ ->
-            let tyl_args = List.map (expression ps tyenv type_vars current_level None) el_args
+        else
+            let tyl_args = List.map (fun e -> expression ps tyenv type_vars current_level (new_tvar current_level) e) el_args
             let mutable float_count = 0
             let mutable tvar_count = 0
             for ty in tyl_args do
@@ -672,7 +697,7 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
                 List.iter2 (fun e_arg ty_arg -> unify_exp tyenv e_arg ty_arg ty_int) el_args tyl_args
                 ty_int_res
     | SEapply ({ se_desc = SEid ".[]"}, [e_arg0; e_arg1]) ->
-        let ty_arg0 = expression ps tyenv type_vars current_level None e_arg0
+        let ty_arg0 = expression ps tyenv type_vars current_level (new_tvar current_level) e_arg0
         let ty_result =
             if same_type tyenv ty_arg0 ty_string then
                 ty_char
@@ -683,11 +708,11 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
                 ty_item
         expression_expect ps tyenv type_vars current_level ty_int e_arg1
         ty_result
-    | SEapply ({ se_desc = SEid "^" } as e0, [e1; e2]) when same_type tyenv ty_string (expression ps tyenv type_vars current_level None e1) && same_type tyenv ty_string (expression ps tyenv type_vars current_level None e2) ->
+    | SEapply ({ se_desc = SEid "^" } as e0, [e1; e2]) when same_type tyenv ty_string (expression ps tyenv type_vars current_level (new_tvar current_level) e1) && same_type tyenv ty_string (expression ps tyenv type_vars current_level (new_tvar current_level) e2) ->
             e0.se_desc <- SEid "^^"
             ty_string
     | SEapply (e1, el) ->
-        let ty1 = expression ps tyenv type_vars current_level None e1
+        let ty1 = expression ps tyenv type_vars current_level (new_tvar current_level) e1
         try filter_arrow tyenv current_level ty1 |> ignore
         with Unify -> raise (Type_error (This_expression_is_not_a_function, e1.se_loc))
         let ty_args, ty_res =
@@ -696,18 +721,10 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
         List.iter2 (fun ty e -> expression_expect ps tyenv type_vars current_level ty e) ty_args el
         ty_res
     | SEfn (patl, e1) ->
-        let ty_args_expected, ty_result_expected =
-            match ty_expected with
-            | Some ty ->
-                try
-                    let tyl = filter_arrow_n tyenv current_level patl.Length ty
-                    let ty_args, ty_result = split_last tyl
-                    Some ty_args, Some ty_result
-                with Unify -> None, None
-            | None -> None, None
+        let ty_args_expected, ty_result_expected = split_last (try_filter_arrow_n tyenv current_level (patl.Length) ty_expected)
         let loc = { (List.head patl).sp_loc with ed = (list_last patl).sp_loc.ed }
         let ty_args, new_bnds = pattern_list tyenv type_vars current_level loc patl
-        Option.iter (fun ty_args_expected -> List.iter2 (fun ty ty_expected -> try unify tyenv ty ty_expected with Unify -> ()) ty_args ty_args_expected) ty_args_expected
+        List.iter2 (fun ty ty_expected -> try unify tyenv ty ty_expected with Unify -> ()) ty_args ty_args_expected
         let names = List.map get_pattern_name patl
         let tyenv = add_values tyenv new_bnds
         let ty_res = expression ps tyenv type_vars current_level ty_result_expected e1
@@ -715,21 +732,21 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
     | SEbegin cl ->
         if cl.Length = 0 then ty_unit
         else
-            let (cl', res) = Misc.split_last cl
+            let cl', res = split_last cl
 
             match res.sc_desc with
             | SCexpr e1 ->
                 let tyenv = List.fold (fun tyenv c ->
                     let new_bnds = command tyenv ps type_vars current_level c
                     Types.add_values tyenv new_bnds) tyenv cl' 
-                expression ps tyenv type_vars current_level None e1
+                expression ps tyenv type_vars current_level ty_expected e1
             | _ ->
                 List.fold (fun tyenv c ->
                     let new_bnds = command tyenv ps type_vars current_level c
                     Types.add_values tyenv new_bnds) tyenv cl |> ignore
-                Ttuple [] // = unit
+                ty_unit
     | SEcase (e, cases) ->
-        let ty_arg = expression ps tyenv type_vars current_level None e
+        let ty_arg = expression ps tyenv type_vars current_level (new_tvar current_level) e
         let ty_res = new_tvar current_level
         List.iter (fun (pat, ew, e) ->
             let ty_pat, new_values = pattern tyenv type_vars current_level ty_arg pat
@@ -740,7 +757,7 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
         ty_res
     | SEtry (e, cases) ->
         if not (List.forall (function (_, None, _) -> true | (_, Some _, _) -> false) cases) then raise (Type_error (Cannot_use_when_clause_in_try_construct, e.se_loc))
-        let ty_arg = expression ps tyenv type_vars current_level None e
+        let ty_arg = expression ps tyenv type_vars current_level (new_tvar current_level) e
         List.iter (fun (pat, _, e) ->
             let ty_pat, new_values = pattern tyenv type_vars current_level (new_tvar current_level) pat
             unify_pat tyenv pat ty_pat ty_exn
@@ -751,7 +768,7 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
         expression_expect ps tyenv type_vars current_level ty_bool e1
         match e3 with
         | Some e3 ->
-            let ty_res = expression ps tyenv type_vars current_level None e2
+            let ty_res = expression ps tyenv type_vars current_level (new_tvar current_level) e2
             expression_expect ps tyenv type_vars current_level ty_res e3
             ty_res
         | None ->
@@ -766,7 +783,7 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
             expression_expect ps tyenv type_vars current_level info.vi_type e1;
             Ttuple []
     | SEgetfield (e1, s) ->
-        let ty1 = expression ps tyenv type_vars current_level None e1
+        let ty1 = expression ps tyenv type_vars current_level (new_tvar current_level) e1
         let candidates = tyenv.labels.FindAll s
         let info_from_ty1 =
             match repr ty1 with
@@ -782,7 +799,7 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
         e.se_desc <- SEugetfield (e1, info.li_index)
         ty_field
     | SEsetfield (e1, s, e2) ->
-        let ty1 = expression ps tyenv type_vars current_level None e1
+        let ty1 = expression ps tyenv type_vars current_level (new_tvar current_level) e1
         let candidates = tyenv.labels.FindAll s
         let info_from_ty1 =
             match repr ty1 with
@@ -821,11 +838,11 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
 /// Returns unit and the result remains in ty_expected.
 /// Throws type error if failed.
 and expression_expect (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary<string, type_expr>) current_level ty_expected e =
-    let ty = expression ps tyenv type_vars current_level (Some ty_expected) e
+    let ty = expression ps tyenv type_vars current_level ty_expected e
     unify_exp tyenv e ty ty_expected
 
 and statement tyenv ps type_vars current_level e =
-    let ty = expression ps tyenv type_vars current_level None e
+    let ty = expression ps tyenv type_vars current_level (new_tvar current_level) e
     match repr ty with
     | Tarrow _ ->
         let {st = st; ed = ed} = e.se_loc
@@ -858,7 +875,7 @@ and command tyenv ps (type_vars : Dictionary<string, type_expr>) current_level (
         let tyenv_with_dummy_info = add_values tyenv (List.map (fun (name, _, info) -> (name, info)) defs)
         let new_values =
             List.map (fun (name, expr, info) ->
-                let ty = expression ps tyenv_with_dummy_info type_vars (current_level + 1) None expr
+                let ty = expression ps tyenv_with_dummy_info type_vars (current_level + 1) (new_tvar (current_level + 1)) expr
                 unify_exp tyenv_with_dummy_info expr ty info.vi_type
                 let info = { vi_type = ty; vi_access = access.Immutable; }
                 name, info) defs
@@ -870,14 +887,14 @@ and command tyenv ps (type_vars : Dictionary<string, type_expr>) current_level (
         all_differ cmd.sc_loc kind.Variable_name kind.Variable_definition names
 
         List.map (fun (s, e) ->
-            (s, { vi_type = expression ps tyenv type_vars current_level None e; vi_access = access.Mutable })) l
+            (s, { vi_type = expression ps tyenv type_vars current_level (new_tvar current_level) e; vi_access = access.Mutable })) l
     | SCtype _
     | SChide _
     | SChideval _
     | SCexn _ -> raise (Type_error (Cannot_use_this_command_inside_an_expression, cmd.sc_loc))
 
 let type_expression ps tyenv (e : Syntax.expression) =
-    let ty = expression ps tyenv (Dictionary<string, type_expr>()) 1 None e
+    let ty = expression ps tyenv (Dictionary<string, type_expr>()) 1 (new_tvar 1) e
     if is_nonexpansive e then generalize 0 ty
     ty
 
