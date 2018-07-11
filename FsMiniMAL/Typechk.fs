@@ -92,8 +92,8 @@ let filter_arrow tyenv current_level ty =
     match repr ty with
     | Tarrow(_, ty1, ty2) -> ty1, ty2 // fast path
     | ty -> 
-        let ty1 = Tvar({ link = None; level = current_level })
-        let ty2 = Tvar({ link = None; level = current_level })
+        let ty1 = new_tvar current_level
+        let ty2 = new_tvar current_level
         unify tyenv ty (Tarrow ("", ty1, ty2))
         ty1, ty2
 
@@ -139,7 +139,7 @@ let rec type_expr tyenv is_typedef (type_vars : Dictionary<string, type_expr>) s
         | false, _ ->
             if is_typedef then
                 raise (Type_error (Unbound_type_variable s, sty.st_loc))
-            let ty = Tvar { link = None; level = global_level }
+            let ty = new_tvar global_level
             type_vars.Add(s, ty)
             ty
     | STarrow (st1, st2) -> Tarrow ("", (type_expr tyenv is_typedef type_vars st1), (type_expr tyenv is_typedef type_vars st2))
@@ -256,7 +256,7 @@ let instanciate_scheme current_level ty =
             match assqo tv !vars with
             | Some ty' -> ty'
             | None ->
-                let ty' = Tvar { link = None; level = current_level }
+                let ty' = new_tvar current_level
                 vars := (tv, ty') :: !vars
                 ty'
         | ty -> map_type inst ty
@@ -265,7 +265,7 @@ let instanciate_scheme current_level ty =
 /// Take constr_info, and copy the argument type expression and resultant type expression.
 /// When type var is found, replace it with newly created type var at current level.
 let instanciate_constr current_level info = 
-    let s = List.map (fun tv -> (tv, Tvar { link = None; level = current_level })) info.ci_params
+    let s = List.map (fun tv -> (tv, new_tvar current_level)) info.ci_params
     let args = List.map (subst s) info.ci_args
     let res = subst s info.ci_res
     args, res
@@ -273,14 +273,14 @@ let instanciate_constr current_level info =
 /// Take label_info, and copy the field type expression and resultant type expression.
 /// When type var is found, replace it with newly created type var at current level.
 let instanciate_label current_level info =
-    let s = List.map (fun tv -> (tv, Tvar { link = None; level = current_level })) info.li_params
+    let s = List.map (fun tv -> (tv, new_tvar current_level)) info.li_params
     let ty_field = subst s info.li_arg
     let ty_rec = subst s info.li_res
     ty_field, ty_rec
 
 let instanciate_record tyenv current_level id_record =
     let info = tyenv.types_of_id.[id_record]
-    let s = List.map (fun tv -> (tv, Tvar { link = None; level = current_level })) info.ti_params
+    let s = List.map (fun tv -> (tv, new_tvar current_level)) info.ti_params
     let record_fields = List.mapi (fun i (name, ty, access) -> (name, (i, subst s ty, access))) (match info.ti_kind with Krecord l -> l | _ -> dontcare())
     let ty_res = subst s info.ti_res
     record_fields, ty_res
@@ -326,7 +326,7 @@ let rec pattern tyenv (type_vars : Dictionary<string, type_expr>) (current_level
                 (ty_res, [])
         else
             // This is identifier, not variant.
-            let ty = Tvar { link = None; level = current_level }
+            let ty = new_tvar current_level
             (ty, [ (s, { vi_type = ty; vi_access = access.Immutable; }) ])
     | SPas (p, ident) ->
         if System.Char.IsUpper(ident.[0]) then
@@ -346,9 +346,9 @@ let rec pattern tyenv (type_vars : Dictionary<string, type_expr>) (current_level
     | SParray l ->
         let tyl, bnds = pattern_list tyenv type_vars current_level pat.sp_loc l
         // Item expressions in array pattern must be same. So unify them.
-        let tv = Tvar { link = None; level = current_level }
-        List.iter2 (fun pat ty -> unify_pat tyenv pat ty tv) l tyl;
-        ((Tconstr (type_id.ARRAY, [ tv ])), bnds)
+        let ty_accu = new_tvar current_level
+        List.iter2 (fun pat ty -> unify_pat tyenv pat ty ty_accu) l tyl;
+        ((Tconstr (type_id.ARRAY, [ ty_accu ])), bnds)
     | SPapply (s, arg) ->
         if not (is_constructor s) then
             raise (Type_error(Must_start_with_uppercase Constructor, pat.sp_loc))
@@ -412,7 +412,7 @@ let rec pattern tyenv (type_vars : Dictionary<string, type_expr>) (current_level
         List.iter2 (fun (_, pat) (i, _, _) -> ary.[i] <- pat) l used_fields
         pat.sp_desc <- SPblock (0, List.ofArray ary)
         (ty_res, bnds)
-    | SPany -> (Tvar { link = None; level = current_level }, [])
+    | SPany -> (new_tvar current_level, [])
     | SPtype (pat, sty) ->
         let ty_res = type_expr tyenv false type_vars sty
         let ty_pat, bnds = pattern tyenv type_vars current_level ty_res pat
@@ -542,9 +542,9 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
             | _ -> List.init el.Length (fun _ -> None)
         Ttuple (List.map2 (expression ps tyenv type_vars current_level) tyl_expected el)
     | SEarray el ->
-        let tv = Tvar { link = None; level = current_level }
-        List.iter (expression_expect ps tyenv type_vars current_level tv) el
-        Tconstr (type_id.ARRAY, [ tv ])
+        let ty_accu = new_tvar current_level
+        List.iter (expression_expect ps tyenv type_vars current_level ty_accu) el
+        Tconstr (type_id.ARRAY, [ ty_accu ])
     | SEstring s ->
         match Option.map repr ty_expected with
         | Some (Tconstr (type_id.FORMAT, _)) ->
@@ -552,7 +552,7 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
                 try PrintfFormat.parse_fmt s
                 with PrintfFormat.InvalidFormatString -> raise (Type_error (Invalid_printf_format, e.se_loc))
             e.se_desc <- SEformat cmds
-            let ty_res = Tvar { link = None; level = current_level }
+            let ty_res = new_tvar current_level
             let ty_args = type_printf_cmds cmds ty_res
             Tconstr (type_id.FORMAT, [ty_args; ty_res])
         | _ -> ty_string
@@ -678,7 +678,7 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
             if same_type tyenv ty_arg0 ty_string then
                 ty_char
             else
-                let ty_item = Tvar { link = None; level = current_level }
+                let ty_item = new_tvar current_level
                 let ty_array = Tconstr (type_id.ARRAY, [ty_item])
                 unify_exp tyenv e_arg0 ty_arg0 ty_array
                 ty_item
@@ -731,7 +731,7 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
                 Ttuple [] // = unit
     | SEcase (e, cases) ->
         let ty_arg = expression ps tyenv type_vars current_level None e
-        let ty_res = Tvar { link = None; level = current_level }
+        let ty_res = new_tvar current_level
         List.iter (fun (pat, ew, e) ->
             let ty_pat, new_values = pattern tyenv type_vars current_level ty_arg pat
             unify_pat tyenv pat ty_pat ty_arg
@@ -854,7 +854,7 @@ and command tyenv ps (type_vars : Dictionary<string, type_expr>) current_level (
         all_differ cmd.sc_loc kind.Function_name kind.Function_definition names
 
         let defs = List.map (fun (name, expr) ->
-            let dummy_info = { vi_type = Tvar { link = None; level = current_level + 1 }; vi_access = access.Immutable; }
+            let dummy_info = { vi_type = new_tvar (current_level + 1); vi_access = access.Immutable; }
             (name, expr, dummy_info)) defs
         let tyenv_with_dummy_info = add_values tyenv (List.map (fun (name, _, info) -> (name, info)) defs)
         let new_values =
