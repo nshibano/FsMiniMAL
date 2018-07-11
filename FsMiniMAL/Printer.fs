@@ -519,7 +519,20 @@ let print_typechk_error lang cols desc =
         | Constructor_takes_no_argument name -> sprintf "Variant %s takes no argument" name
         | Constructor_used_with_wrong_number_of_arguments (name, n, m) -> sprintf "Variant %s takes %d argument(s) but used with %d argument(s)." name n m
         | Label_undefined name -> sprintf "Undefined label %s" name
-        | Label_undefined_for_type (tyenv, name, ty) -> sprintf "Label %s is undefined for type %s" name (string_of_elem cols (element_of_type tyenv (create_tvar_assoc_table()) ty))
+        | Label_undefined_for_type (tyenv, name, ty) ->
+            let name_of_var = create_tvar_assoc_table()
+            let accu = Section.Create(Flow, 2)
+            accu.AddText "Label"
+            accu.AddSpace()
+            accu.AddText name
+            accu.AddSpace()
+            accu.AddText "is not defined in type"
+            accu.AddSpace()
+            accu.Add(element_of_type tyenv name_of_var ty)
+    
+            let elem = Esection accu
+            update_sizes elem
+            string_of_elem cols elem
         | Unbound_identifier name -> sprintf "Unbound identifier %s" name
         | Binding_names_are_inconsistent -> "Types of bindings are inconsistent"
         | Binding_types_are_inconsistent -> "Names of bindings are inconsistent"
@@ -565,7 +578,22 @@ let print_typechk_error lang cols desc =
         | Constructor_takes_no_argument name -> sprintf "コンストラクタ %s は引数を取りませんが、引数とともに使われています" name
         | Constructor_used_with_wrong_number_of_arguments (name, n, m) -> sprintf "コンストラクタ %s は%d個の引数を取りますが%d個の引数と共に使われています" name n m
         | Label_undefined name -> sprintf "ラベル名 %s は未定義です" name
-        | Label_undefined_for_type (tyenv, name, ty) -> sprintf "Label %s is undefined for type %s" name (string_of_elem cols (element_of_type tyenv (create_tvar_assoc_table()) ty))
+        | Label_undefined_for_type (tyenv, name, ty) ->
+            let name_of_var = create_tvar_assoc_table()
+            let accu = Section.Create(Flow, 2)
+            accu.AddText "型"
+            accu.AddSpace()
+            accu.Add(element_of_type tyenv name_of_var ty)
+            accu.AddSpace()
+            accu.AddText "について、ラベル名"
+            accu.AddSpace()
+            accu.AddText name
+            accu.AddSpace()
+            accu.AddText "は定義されていません"
+    
+            let elem = Esection accu
+            update_sizes elem
+            string_of_elem cols elem
         | Unbound_identifier name -> sprintf "変数 %s は未定義です" name
         | Binding_names_are_inconsistent -> "束縛変数の名前が一致しません"
         | Binding_types_are_inconsistent -> "束縛変数の型が一致しません"

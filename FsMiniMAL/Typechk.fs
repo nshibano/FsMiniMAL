@@ -644,7 +644,7 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
                 match tryAssoc lab record_fields with
                 | Some (idx, ty, access) ->
                     (lab, idx, ty, access, e)
-                | None -> raise (Type_error (Label_undefined lab, e.se_loc))) fields
+                | None -> raise (Type_error (Label_undefined_for_type (tyenv, lab, ty_res), e.se_loc))) fields
         
         // tests for number of given fields
         match orig, List.length fields = List.length record_fields with
