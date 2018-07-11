@@ -722,8 +722,8 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
         ty_res
     | SEfn (patl, e1) ->
         let ty_args_expected, ty_result_expected = split_last (try_filter_arrow_n tyenv current_level (patl.Length) ty_expected)
-        let loc = { (List.head patl).sp_loc with ed = (list_last patl).sp_loc.ed }
-        let ty_args, new_bnds = pattern_list tyenv type_vars current_level loc patl
+        let loc_patl = { (List.head patl).sp_loc with ed = (list_last patl).sp_loc.ed }
+        let ty_args, new_bnds = pattern_list tyenv type_vars current_level loc_patl patl
         List.iter2 (fun ty ty_expected -> try unify tyenv ty ty_expected with Unify -> ()) ty_args ty_args_expected
         let names = List.map get_pattern_name patl
         let tyenv = add_values tyenv new_bnds
