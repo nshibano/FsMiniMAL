@@ -114,8 +114,7 @@ let is_tvar (ty : type_expr) =
     | _ -> false
 
 let rec is_record (tyenv : tyenv) (ty : type_expr) =
-    let ty = repr ty
-    match ty with
+    match repr ty with
     | Tconstr (id, _) ->
         match tyenv.types_of_id.TryFind(id) with
         | Some ti ->
