@@ -367,6 +367,11 @@ let main argv =
     topcase "type foo1 = { foo : int }; type foo2 = { foo : int }; (fn ({ foo = n } : foo1) -> n); ()" "()"
     type_error "fun p i = 10e-3 * i * i; p 0"
 
+    case "fun f x : float = x + x; f 1.0" "2.0"
+    case "fun f (x : float) = x + x; f 1.0" "2.0"
+    case "val f = ((fn x -> x + x) : float -> 'a); f 1.0" "2.0"
+    case "val f = ((fn x -> x + x) : 'a -> float); f 1.0" "2.0"
+
     printfn "Done."
     //printfn "Elapsed: %d (ms)" sw.ElapsedMilliseconds
     printfn "Press any key to close."

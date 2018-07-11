@@ -109,8 +109,7 @@ let filter_arrow_n tyenv current_level n ty =
     loop n ty
 
 /// If ty is formed as 'a -> 'b ... -> 'result with arity n, returns [ 'a; 'b; ...; 'result ].
-/// Otherwise returns list of newly created tvars.
-/// In either case, length of the returned list is n + 1. 
+/// If not, fill the list with newly created tvars.
 let try_filter_arrow_n tyenv current_level n ty =
     let accu = new ResizeArray<type_expr>()
     let rec loop n ty =
@@ -132,8 +131,8 @@ let try_filter_arrow_n tyenv current_level n ty =
                 | None -> ()
             | _ -> ()
     loop n ty
-    if accu.Count = n + 1 then List.ofSeq accu
-    else List.init (n + 1) (fun _ -> new_tvar current_level)
+    while accu.Count < n + 1 do accu.Add(new_tvar current_level)
+    List.ofSeq accu
 
 let is_tvar (ty : type_expr) =
     match repr ty with
@@ -742,8 +741,8 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
     | SEfn (patl, e1) ->
         let ty_args_expected, ty_result_expected = split_last (try_filter_arrow_n tyenv current_level (patl.Length) ty_expected)
         let loc_patl = { (List.head patl).sp_loc with ed = (list_last patl).sp_loc.ed }
-        let ty_args, new_bnds = pattern_list tyenv type_vars current_level loc_patl (List.init patl.Length (fun _ -> new_tvar current_level)) patl
-        //List.iter2 (fun ty ty_expected -> try unify tyenv ty ty_expected with Unify -> ()) ty_args ty_args_expected
+        let ty_args, new_bnds = pattern_list tyenv type_vars current_level loc_patl ty_args_expected patl
+        List.iter2 (fun ty ty_expected -> try unify tyenv ty ty_expected with Unify -> ()) ty_args ty_args_expected
         let names = List.map get_pattern_name patl
         let tyenv = add_values tyenv new_bnds
         let ty_res = expression ps tyenv type_vars current_level ty_result_expected e1
