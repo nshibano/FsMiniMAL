@@ -265,10 +265,10 @@ type Interpreter(config : config) as this =
             let cmds, _ = Parser.Program Lexer.main lexbuf
             cmds
         with
-        | LexHelper.Lexical_error _ ->
+        | LexHelper.Lexical_error lex_err ->
             let st, ed = lexbuf.Range
             let loc = { src = src; st = st; ed = ed }
-            failwithf "> %s\r\n  Lexical error." (Syntax.describe_location loc)
+            failwithf "> %s\r\n  Lexical error (%A)." (Syntax.describe_location loc) lex_err
         | Failure "parse error" ->
             let st, ed = lexbuf.Range
             let loc = { src = src; st = st; ed = ed }
