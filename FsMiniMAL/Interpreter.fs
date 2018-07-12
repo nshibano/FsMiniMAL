@@ -284,11 +284,11 @@ type Interpreter(config : config) as this =
         | Error _ -> dontcare()
         | Ok cmds ->
 
-            let errsink (err : type_error_desc, loc : location) =
+            let warning_sink (err : type_error_desc, loc : location) =
                 pfn "> %s" (Syntax.describe_location loc)
                 pfn "%s" (Printer.print_typechk_error lang cols err)
 
-            match attempt (Typechk.type_command_list errsink tyenv) cmds with
+            match attempt (Typechk.type_command_list warning_sink tyenv) cmds with
             | Error (Type_error (err, loc)) ->
                 pfn "> %s" (Syntax.describe_location loc)
                 pfn "%s" (Printer.print_typechk_error lang cols err)
