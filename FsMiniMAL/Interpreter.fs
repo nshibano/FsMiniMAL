@@ -82,6 +82,15 @@ type State =
 
 exception MALStackOverflow
 
+type Message =
+    | TypeError of Typechk.type_error_desc * location
+    | EvaluationComplete of tyenv * type_expr * value
+    | NewValues of tyenv * (string * value * value_info) list 
+    | TypeDefined of Syntax.typedef list
+    | ExceptionDefined of string
+    | Hide of string
+    | HideVal of string
+
 type Error =
     | LexicalError of LexHelper.lexical_error_desc * location
     | SyntaxError of location
@@ -93,25 +102,89 @@ type Error =
 type Interpreter(config : config) as this =
 
     let mutable state = State.Finished
-    
-    let rt =
-        { memory_counter = ref 0
-          stopwatch = 0L
-          print_string = ignore
-          config = config }
-        
     let mutable accu : value = unit
     let mutable env : value array = Array.copy genv_std
-
     let mutable stack = Array.zeroCreate<Frame> 16
     let mutable stack_topidx = -1
-
     let mutable tyenv = tyenv_clone tyenv_std
     let mutable alloc = alloc_std.Clone()
     let mutable cols = 80
     let mutable error : Error = Unchecked.defaultof<Error>
     let mutable wakeup  = DateTime.MinValue
     let mutable result = (unit, ty_unit)
+    let rt =
+        { memory_counter = ref 0
+          stopwatch = 0L
+          print_string = ignore
+          config = config }
+
+    let stacktrace limit (sb : StringBuilder) =
+        let pfn fmt = Printf.kprintf (fun s -> sb.AppendLine s |> ignore) fmt
+        let pfni fmt = Printf.kprintf (fun s ->
+            sb.Append("  ") |> ignore
+            sb.AppendLine s |> ignore) fmt
+        pfn "Stacktrace:"
+        let st = min (limit - 1) stack_topidx
+        if st <> stack_topidx then
+            pfn "  (printing bottom %d frames only)" limit
+        for i = st downto 0 do
+            match stack.[i].code with
+            | UEblock _ -> pfni "Block"
+            | UEarray _ -> pfni "Array"
+            | UEblockwith _ -> pfni "BlockWith"
+            | UEcompare _ -> pfni "Compare"
+            | UEapply _ -> pfni "Apply"
+            | UEbegin _ -> pfni "Begin"
+            | UEcase _ -> pfni "Case"
+            | UEtry _ -> pfni "Try"
+            | UEif _ -> pfni "If"
+            | UEsetenvvar _ -> pfni "Setenvvar"
+            | UEfor _ -> pfni "For"
+            | UEwhile _ -> pfni "While"
+            | UCval _ -> pfni "Val"
+            | UCvar _ -> pfni "Var"
+            | _ -> pfn "  Error"
+
+    let string_of_error (lang : lang) (cols : int) (err : Error) =
+        let buf = new StringBuilder()
+        match err with
+        | LexicalError (lex_err, loc) ->
+            bprintf buf "> %s\r\n  Lexical error (%A).\r\n" (Syntax.describe_location loc) lex_err
+        | SyntaxError loc ->
+            bprintf buf "> %s\r\n  Syntax error.\r\n" (Syntax.describe_location loc)
+        | TypeError (type_err, loc) ->
+            bprintf buf "> %s\r\n" (Syntax.describe_location loc)
+            bprintf buf "%s\r\n" (Printer.print_typechk_error lang cols type_err)
+        | UncaughtException exn_value ->
+            buf.Add("UncaughtException: ")
+            buf.Add(Printer.print_value_without_type tyenv cols ty_exn exn_value)
+            buf.AppendLine() |> ignore
+            stacktrace 10 buf
+        | UncatchableException exn ->
+            buf.Add("UncatchableException: ")
+            buf.Add(exn.GetType().Name)
+            buf.AppendLine() |> ignore
+            stacktrace 10 buf
+        | EnvSizeLimit ->
+            bprintf buf "> Size of the global env hits the limit.\r\n"
+        buf.ToString()
+    
+    let default_message_hook (msg : Message) =
+        match msg with
+        | Message.TypeError (err, loc) -> rt.print_string (string_of_error En 80 (Error.TypeError (err, loc)))
+        | Message.EvaluationComplete (tyenv, ty, value)-> rt.print_string (Printer.print_value tyenv 80 ty value + "\r\n")
+        | Message.NewValues (tyenv, new_values) ->
+            let sb = new StringBuilder()
+            for name, value, info in new_values do
+                sb.Add (Printer.print_definition tyenv 80 name info value)
+                sb.Add("\r\n")
+            rt.print_string (sb.ToString())
+        | Message.TypeDefined defs -> List.iter (fun def -> rt.print_string (sprintf "Type %s defined.\r\n" def.sd_name)) defs
+        | Message.ExceptionDefined name -> rt.print_string (sprintf "Exception %s is defined.\r\n" name)
+        | Message.Hide name -> rt.print_string (sprintf "Type %s is now abstract.\r\n" name)
+        | Message.HideVal name -> rt.print_string (sprintf "Value %s is now hidden.\r\n" name)
+    
+    let mutable message_hook = default_message_hook
 
     let lang =
         match System.Globalization.CultureInfo.CurrentCulture.Name with
@@ -185,10 +258,10 @@ type Interpreter(config : config) as this =
                     for l = 0 to ofss_from.Length - 1 do
                         captures.[l] <- env.[ofss_from.[l]]
                 | _ -> dontcare()
-        | UTCtype (dl, _) -> List.iter (fun d -> pfn "type %s defined." d.sd_name) dl
-        | UTChide name -> pfn "type %s is now abstract." name
-        | UTChideval name -> pfn "Value %s is now hidden." name
-        | UTCexn (name, _) -> pfn "exception %s defined." name
+        | UTCtype (dl, _) -> message_hook (Message.TypeDefined dl)
+        | UTChide name -> message_hook (Message.Hide name)
+        | UTChideval name -> message_hook (Message.HideVal name)
+        | UTCexn (name, _) -> message_hook (Message.ExceptionDefined name)
         | UTCupd (tyenv', alloc', shadowed) ->
             tyenv <- tyenv'
             alloc <- alloc'
@@ -199,7 +272,7 @@ type Interpreter(config : config) as this =
             | _ -> ()
         | UTCprint_value ty ->
             result <- (this.Accu, ty)
-            pfn "%s" (Printer.print_value tyenv cols ty this.Accu)
+            message_hook (Message.EvaluationComplete (tyenv, ty, this.Accu))
         | UTCprint_new_values new_values ->
             let new_values = List.map (fun (name, info) ->
                 let ofs, kind = alloc.Get(name)
@@ -209,8 +282,7 @@ type Interpreter(config : config) as this =
                     | _, Mutable -> dontcare()
                     | x, Immutable -> x
                 (name, value, info)) new_values
-            for name, value, info in new_values do
-                pfn "%s" (Printer.print_definition tyenv cols name info value)
+            message_hook (Message.NewValues (tyenv, new_values))
         | UEblock _ ->
             stack_push c { BlockFrame.pc = Tag.Start; fields = null; i = 0 }
         | UEarray _ ->
@@ -366,57 +438,6 @@ type Interpreter(config : config) as this =
         | None ->
             error <- Error.UncaughtException exn_value
             state <- State.StoppedDueToError
-
-    let stacktrace limit (sb : StringBuilder) =
-        let pfn fmt = Printf.kprintf (fun s -> sb.AppendLine s |> ignore) fmt
-        let pfni fmt = Printf.kprintf (fun s ->
-            sb.Append("  ") |> ignore
-            sb.AppendLine s |> ignore) fmt
-        pfn "Stacktrace:"
-        let st = min (limit - 1) stack_topidx
-        if st <> stack_topidx then
-            pfn "  (printing bottom %d frames only)" limit
-        for i = st downto 0 do
-            match stack.[i].code with
-            | UEblock _ -> pfni "Block"
-            | UEarray _ -> pfni "Array"
-            | UEblockwith _ -> pfni "BlockWith"
-            | UEcompare _ -> pfni "Compare"
-            | UEapply _ -> pfni "Apply"
-            | UEbegin _ -> pfni "Begin"
-            | UEcase _ -> pfni "Case"
-            | UEtry _ -> pfni "Try"
-            | UEif _ -> pfni "If"
-            | UEsetenvvar _ -> pfni "Setenvvar"
-            | UEfor _ -> pfni "For"
-            | UEwhile _ -> pfni "While"
-            | UCval _ -> pfni "Val"
-            | UCvar _ -> pfni "Var"
-            | _ -> pfn "  Error"
-
-    let string_of_error (lang : lang) (cols : int) (err : Error) =
-        let buf = new StringBuilder()
-        match err with
-        | LexicalError (lex_err, loc) ->
-            bprintf buf "> %s\r\n  Lexical error (%A).\r\n" (Syntax.describe_location loc) lex_err
-        | SyntaxError loc ->
-            bprintf buf "> %s\r\n  Syntax error.\r\n" (Syntax.describe_location loc)
-        | TypeError (type_err, loc) ->
-            bprintf buf "> %s\r\n" (Syntax.describe_location loc)
-            bprintf buf "%s\r\n" (Printer.print_typechk_error lang cols type_err)
-        | UncaughtException exn_value ->
-            buf.Add("UncaughtException: ")
-            buf.Add(Printer.print_value_without_type tyenv cols ty_exn exn_value)
-            buf.AppendLine() |> ignore
-            stacktrace 10 buf
-        | UncatchableException exn ->
-            buf.Add("UncatchableException: ")
-            buf.Add(exn.GetType().Name)
-            buf.AppendLine() |> ignore
-            stacktrace 10 buf
-        | EnvSizeLimit ->
-            bprintf buf "> Size of the global env hits the limit.\r\n"
-        buf.ToString()
 
     let run (slice_ticks : int64) =
         
