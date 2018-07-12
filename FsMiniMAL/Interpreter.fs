@@ -88,7 +88,7 @@ type Error =
     | TypeError of Typechk.type_error_desc * location
     | UncaughtException of value
     | UncatchableException of exn
-    | Other
+    | EnvSizeLimit
 
 module ErrorPrinter =
 
@@ -102,6 +102,8 @@ module ErrorPrinter =
         | TypeError (type_err, loc) ->
             bprintf buf "> %s\r\n" (Syntax.describe_location loc)
             bprintf buf "%s" (Printer.print_typechk_error lang cols type_err)
+        | EnvSizeLimit ->
+            bprintf buf "> Size of the global env hits the limit."
         | _ ->
             bprintf buf "Error."
         buf.ToString()
@@ -310,9 +312,8 @@ type Interpreter(config : config) as this =
             | Ok (tyenvs, ccmds) ->
                 let genv_size, tcmds = Translate.translate_command_list alloc tyenvs ccmds
                 if genv_size > config.maximum_array_length then
-                    pfn "> Size of the global env hits the limit."
                     state <- State.StoppedDueToError
-                    error <- Other
+                    error <- EnvSizeLimit
                 else
                     env <- array_ensure_capacity_exn config.maximum_array_length genv_size env
                     start_code (UEbegin tcmds)
