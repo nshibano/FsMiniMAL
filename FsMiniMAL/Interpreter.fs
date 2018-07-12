@@ -286,7 +286,7 @@ type Interpreter(config : config) as this =
             match attempt (Typechk.type_command_list rt.print_string tyenv) cmds with
             | Error (Type_error (err, loc)) ->
                 pfn "> %s" (Syntax.describe_location loc)
-                pfn "%s." (Printer.print_typechk_error lang cols err)
+                pfn "%s" (Printer.print_typechk_error lang cols err)
                 state <- State.StoppedDueToError
                 error <- TypeError (tyenv, err, loc)
             | Error (InvalidTypeHideRequest msg) ->

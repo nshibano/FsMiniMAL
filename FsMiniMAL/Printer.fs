@@ -508,17 +508,17 @@ let print_typechk_error lang cols desc =
             accu.AddSpace()
             accu.Add(element_of_type tyenv name_of_var ty2)
             accu.AddSpace()
-            accu.AddText "was expected"
+            accu.AddText "was expected."
     
             let elem = Esection accu
             update_sizes elem
             string_of_elem cols elem
-        | Multiple_occurence (kind, name, defkind) -> sprintf "%s %s occurs multiply in %s" (string_of_kind lang kind true) name (string_of_kind lang defkind false)
-        | Constructor_undefined name -> sprintf "Variant %s is not defined" name
-        | Constructor_requires_argument name -> sprintf "Variant %s requires argument" name
-        | Constructor_takes_no_argument name -> sprintf "Variant %s takes no argument" name
+        | Multiple_occurence (kind, name, defkind) -> sprintf "%s %s occurs multiply in %s." (string_of_kind lang kind true) name (string_of_kind lang defkind false)
+        | Constructor_undefined name -> sprintf "Variant %s is not defined." name
+        | Constructor_requires_argument name -> sprintf "Variant %s requires argument." name
+        | Constructor_takes_no_argument name -> sprintf "Variant %s takes no argument." name
         | Constructor_used_with_wrong_number_of_arguments (name, n, m) -> sprintf "Variant %s takes %d argument(s) but used with %d argument(s)." name n m
-        | Label_undefined name -> sprintf "Undefined label %s" name
+        | Label_undefined name -> sprintf "Undefined label %s." name
         | Label_undefined_for_type (tyenv, name, ty) ->
             let name_of_var = create_tvar_assoc_table()
             let accu = Section.Create(Flow, 2)
@@ -533,26 +533,28 @@ let print_typechk_error lang cols desc =
             let elem = Esection accu
             update_sizes elem
             string_of_elem cols elem
-        | Unbound_identifier name -> sprintf "Unbound identifier %s" name
-        | Binding_names_are_inconsistent -> "Types of bindings are inconsistent"
-        | Binding_types_are_inconsistent -> "Names of bindings are inconsistent"
-        | Unbound_type_variable name -> sprintf "Unbound type variable %s" name
-        | Undefined_type_constructor name -> sprintf "Undefined type constructor %s" name
-        | Wrong_arity_for_type name -> sprintf "Wrong arity for type %s" name
+        | Unbound_identifier name -> sprintf "Unbound identifier %s." name
+        | Binding_names_are_inconsistent -> "Types of bindings are inconsistent."
+        | Binding_types_are_inconsistent -> "Names of bindings are inconsistent."
+        | Unbound_type_variable name -> sprintf "Unbound type variable %s." name
+        | Undefined_type_constructor name -> sprintf "Undefined type constructor %s." name
+        | Wrong_arity_for_type name -> sprintf "Wrong arity for type %s." name
         | Must_start_with_lowercase kind -> sprintf "%s must start with lowercase." (string_of_kind lang kind true)
         | Must_start_with_uppercase kind -> sprintf "%s must start with uppercase." (string_of_kind lang kind true)
-        | Type_definition_contains_immediate_cyclic_type_abbreviation -> "Type definition contains immediate cyclic type abbreviation"
-        | Integer_literal_overflow -> "Integer literal overflow"
-        | Some_labels_are_missing -> "Some labels are missing"
-        | Multiple_arguments_to_constructor_must_be_tupled -> "Multiple arguments to constructor must be tupled"
-        | This_expression_is_not_a_function -> "This expression is not a function"
-        | Too_many_arguments_for_this_function -> "Too many arguments for this function"
-        | Cannot_use_this_command_inside_an_expression -> "Cannot use this command inside an expression"
-        | Cannot_use_when_clause_in_try_construct -> "Cannot use when clause in try construct"
-        | Invalid_printf_format -> "Invalid printf format"
-        | Not_mutable (kind, name) -> sprintf "%s %s is not mutable" (string_of_kind lang kind true) name
-        | Invalid_identifier -> "Invalid identifier"
-        | This_expression_is_not_a_record -> "This expression is not a record"
+        | Type_definition_contains_immediate_cyclic_type_abbreviation -> "Type definition contains immediate cyclic type abbreviation."
+        | Integer_literal_overflow -> "Integer literal overflow."
+        | Some_labels_are_missing -> "Some labels are missing."
+        | Multiple_arguments_to_constructor_must_be_tupled -> "Multiple arguments to constructor must be tupled."
+        | This_expression_is_not_a_function -> "This expression is not a function."
+        | Too_many_arguments_for_this_function -> "Too many arguments for this function."
+        | Cannot_use_this_command_inside_an_expression -> "Cannot use this command inside an expression."
+        | Cannot_use_when_clause_in_try_construct -> "Cannot use when clause in try construct."
+        | Invalid_printf_format -> "Invalid printf format."
+        | Not_mutable (kind, name) -> sprintf "%s %s is not mutable." (string_of_kind lang kind true) name
+        | Invalid_identifier -> "Invalid identifier."
+        | This_expression_is_not_a_record -> "This expression is not a record."
+        | Partially_applied -> "Beware, this function is partially applied."
+        | Useless_with_clause -> "All the fields are explicitly listed in this record: the 'with' clause is useless."
 
     | Ja ->
         match desc with
@@ -567,17 +569,17 @@ let print_typechk_error lang cols desc =
             accu.AddSpace()
             accu.Add(element_of_type tyenv name_of_var ty2)
             accu.AddSpace()
-            accu.AddText "型である必要があります"
+            accu.AddText "型である必要があります。"
     
             let elem = Esection accu
             update_sizes elem
             string_of_elem cols elem
-        | Multiple_occurence (kind, name, defkind) -> sprintf "%s %s が%s中で複数回使われています" (string_of_kind lang kind true) name (string_of_kind lang defkind false)
-        | Constructor_undefined name -> sprintf "コンストラクタ %s は未定義です" name
-        | Constructor_requires_argument name -> sprintf "コンストラクタ %s は引数が必要ですが、引数なしで使われています" name
-        | Constructor_takes_no_argument name -> sprintf "コンストラクタ %s は引数を取りませんが、引数とともに使われています" name
-        | Constructor_used_with_wrong_number_of_arguments (name, n, m) -> sprintf "コンストラクタ %s は%d個の引数を取りますが%d個の引数と共に使われています" name n m
-        | Label_undefined name -> sprintf "ラベル名 %s は未定義です" name
+        | Multiple_occurence (kind, name, defkind) -> sprintf "%s %s が%s中で複数回使われています。" (string_of_kind lang kind true) name (string_of_kind lang defkind false)
+        | Constructor_undefined name -> sprintf "コンストラクタ %s は未定義です。" name
+        | Constructor_requires_argument name -> sprintf "コンストラクタ %s は引数が必要ですが、引数なしで使われています。" name
+        | Constructor_takes_no_argument name -> sprintf "コンストラクタ %s は引数を取りませんが、引数とともに使われています。" name
+        | Constructor_used_with_wrong_number_of_arguments (name, n, m) -> sprintf "コンストラクタ %s は%d個の引数を取りますが%d個の引数と共に使われています。" name n m
+        | Label_undefined name -> sprintf "ラベル名 %s は未定義です。" name
         | Label_undefined_for_type (tyenv, name, ty) ->
             let name_of_var = create_tvar_assoc_table()
             let accu = Section.Create(Flow, 2)
@@ -589,28 +591,30 @@ let print_typechk_error lang cols desc =
             accu.AddSpace()
             accu.AddText name
             accu.AddSpace()
-            accu.AddText "は定義されていません"
+            accu.AddText "は定義されていません。"
     
             let elem = Esection accu
             update_sizes elem
             string_of_elem cols elem
-        | Unbound_identifier name -> sprintf "変数 %s は未定義です" name
-        | Binding_names_are_inconsistent -> "束縛変数の名前が一致しません"
-        | Binding_types_are_inconsistent -> "束縛変数の型が一致しません"
-        | Unbound_type_variable name -> sprintf "束縛されていない型変数 %s が使われています" name
-        | Undefined_type_constructor name -> sprintf "定義されていない型構築子 %s が使われています" name
-        | Wrong_arity_for_type name -> sprintf "多相型 %s が間違った数の引数とともに使われています" name
-        | Must_start_with_lowercase kind -> sprintf "%sは小文字で始まる必要があります" (string_of_kind lang kind true)
-        | Must_start_with_uppercase kind -> sprintf "%sは大文字で始まる必要があります" (string_of_kind lang kind true)
-        | Type_definition_contains_immediate_cyclic_type_abbreviation -> "型定義が直接に再帰的な型略称を含んでいます"
-        | Integer_literal_overflow -> "整数リテラルの値が表現可能な範囲を超えています"
-        | Some_labels_are_missing -> "いくつかのラベルについて値が指定されていません"
-        | Multiple_arguments_to_constructor_must_be_tupled -> "コンストラクタへの複数の引数はタプルとして与える必要があります"
-        | This_expression_is_not_a_function -> "この式は関数ではありません"
-        | Too_many_arguments_for_this_function -> "関数に与える引数の数が多すぎます"
-        | Cannot_use_this_command_inside_an_expression -> "式の内部ではこのコマンドを使用できません"
-        | Cannot_use_when_clause_in_try_construct -> "try構文ではwhen節を使用できません"
-        | Invalid_printf_format -> "無効な printf フォーマット文字列です"
-        | Not_mutable (kind, name) -> sprintf "%s %s は変更可能ではありません" (string_of_kind lang kind true) name
-        | Invalid_identifier -> "識別子が妥当ではありません"
-        | This_expression_is_not_a_record -> "この式はレコードではありません"
+        | Unbound_identifier name -> sprintf "変数 %s は未定義です。" name
+        | Binding_names_are_inconsistent -> "束縛変数の名前が一致しません。"
+        | Binding_types_are_inconsistent -> "束縛変数の型が一致しません。"
+        | Unbound_type_variable name -> sprintf "束縛されていない型変数 %s が使われています。" name
+        | Undefined_type_constructor name -> sprintf "定義されていない型構築子 %s が使われています。" name
+        | Wrong_arity_for_type name -> sprintf "多相型 %s が間違った数の引数とともに使われています。" name
+        | Must_start_with_lowercase kind -> sprintf "%sは小文字で始まる必要があります。" (string_of_kind lang kind true)
+        | Must_start_with_uppercase kind -> sprintf "%sは大文字で始まる必要があります。" (string_of_kind lang kind true)
+        | Type_definition_contains_immediate_cyclic_type_abbreviation -> "型定義が直接に再帰的な型略称を含んでいます。"
+        | Integer_literal_overflow -> "整数リテラルの値が表現可能な範囲を超えています。"
+        | Some_labels_are_missing -> "いくつかのラベルについて値が指定されていません。"
+        | Multiple_arguments_to_constructor_must_be_tupled -> "コンストラクタへの複数の引数はタプルとして与える必要があります。"
+        | This_expression_is_not_a_function -> "この式は関数ではありません。"
+        | Too_many_arguments_for_this_function -> "関数に与える引数の数が多すぎます。"
+        | Cannot_use_this_command_inside_an_expression -> "式の内部ではこのコマンドを使用できません。"
+        | Cannot_use_when_clause_in_try_construct -> "try構文ではwhen節を使用できません。"
+        | Invalid_printf_format -> "無効な printf フォーマット文字列です。"
+        | Not_mutable (kind, name) -> sprintf "%s %s は変更可能ではありません。" (string_of_kind lang kind true) name
+        | Invalid_identifier -> "識別子が妥当ではありません。"
+        | This_expression_is_not_a_record -> "この式はレコードではありません。"
+        | Partially_applied -> "この式は部分適用されています。ご注意ください。"
+        | Useless_with_clause -> "全てのフィールドが明示的に与えられているため、 with 節は不要です。"

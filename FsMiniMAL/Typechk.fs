@@ -55,6 +55,9 @@ type type_error_desc =
     | Invalid_identifier
     | Not_mutable of kind * string
     | This_expression_is_not_a_record
+    // Warnings
+    | Partially_applied
+    | Useless_with_clause
 
 exception Type_error of type_error_desc * location
  
