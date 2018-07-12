@@ -121,7 +121,7 @@ and config =
             bytes_stop_exec = 128 <<< 20 // 128 MiB
             maximum_stack_depth = 1 <<< 20 // 1048576
             
-            // An practical limit for length of arrays. 128MiB for value array on 64 bit machine.
+            // A practical limit for length of arrays. 128MiB for value array on 64 bit machine.
             maximum_array_length = 1 <<< 24 // 16777216 
         }
 

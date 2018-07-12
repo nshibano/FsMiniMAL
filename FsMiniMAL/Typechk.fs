@@ -55,6 +55,7 @@ type type_error_desc =
     | Invalid_identifier
     | Not_mutable of kind * string
     | This_expression_is_not_a_record
+    | Already_abstract of string
     // Warnings
     | Partially_applied
     | Useless_with_clause
@@ -62,7 +63,7 @@ type type_error_desc =
 type warning_sink = (type_error_desc * location) -> unit
 
 exception Type_error of type_error_desc * location
- 
+
 /// Throws Type_error if name list contains duplicated name.
 let rec all_differ loc kind definition_kind names =
     let set = HashSet<string>()
@@ -276,6 +277,17 @@ let add_typedef tyenv loc dl =
     
     // Create tyenv with real type information.
     List.fold (fun tyenv (_, _, _, ti) -> Types.add_type tyenv ti) tyenv dl
+
+let hide_type (tyenv : tyenv) name loc =
+        match tyenv.types.TryFind(name) with
+        | Some info ->
+            match info.ti_kind with
+            | Kbasic -> raise (Type_error (Already_abstract name, loc))
+            | _ -> ()
+            let tyenv = remove_type tyenv info
+            let info = { info with ti_kind = Kbasic }
+            add_type tyenv info
+        | None -> raise (Type_error (Undefined_type_constructor name, loc))
 
 /// Copy the type expression. When generic level type var is found, replace it with newly created type var at current level.
 let instanciate_scheme current_level ty =
@@ -983,7 +995,7 @@ let type_command_list warning_sink tyenv cmds =
             ccmds.Add (CCtype (dl, cmd.sc_loc))
             tyenv <- tyenv'
         | { sc_desc = SChide (name, loc) } -> 
-            let tyenv' = Types.hide_type tyenv name
+            let tyenv' = hide_type tyenv name cmd.sc_loc
             tyenvs.Add(tyenv)
             ccmds.Add (CChide (name, loc))
             tyenv <- tyenv'

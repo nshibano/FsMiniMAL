@@ -83,12 +83,28 @@ type State =
 exception MALStackOverflow
 
 type Error =
-    //| LexicalError of LexHelper.lexical_error_desc * location
-    | SyntaxError
-    | TypeError of tyenv * Typechk.type_error_desc * location
+    | LexicalError of LexHelper.lexical_error_desc * location
+    | SyntaxError of location
+    | TypeError of Typechk.type_error_desc * location
     | UncaughtException of value
     | UncatchableException of exn
     | Other
+
+module ErrorPrinter =
+
+    let string_of_error (lang : lang) (cols : int) (err : Error) =
+        let buf = new StringBuilder()
+        match err with
+        | LexicalError (lex_err, loc) ->
+            bprintf buf "> %s\r\n  Lexical error (%A)." (Syntax.describe_location loc) lex_err
+        | SyntaxError loc ->
+            bprintf buf "> %s\r\n  Syntax error." (Syntax.describe_location loc)
+        | TypeError (type_err, loc) ->
+            bprintf buf "> %s\r\n" (Syntax.describe_location loc)
+            bprintf buf "%s" (Printer.print_typechk_error lang cols type_err)
+        | _ ->
+            bprintf buf "Error."
+        buf.ToString()
 
 type Interpreter(config : config) as this =
 
@@ -263,25 +279,23 @@ type Interpreter(config : config) as this =
         lexbuf.BufferLocalStore.["src"] <- src
         try
             let cmds, _ = Parser.Program Lexer.main lexbuf
-            cmds
+            Ok cmds
         with
         | LexHelper.Lexical_error lex_err ->
             let st, ed = lexbuf.Range
             let loc = { src = src; st = st; ed = ed }
-            failwithf "> %s\r\n  Lexical error (%A)." (Syntax.describe_location loc) lex_err
+            Error (LexicalError (lex_err, loc))
         | Failure "parse error" ->
             let st, ed = lexbuf.Range
             let loc = { src = src; st = st; ed = ed }
-            failwithf "> %s\r\n  Syntax error." (Syntax.describe_location loc)
+            Error (SyntaxError loc)
 
     let start src =
         cancel()
-        match attempt parse src with
-        | Error (Failure msg) ->
-            rt.print_string (msg + "\r\n")
+        match parse src with
+        | Error err ->
             state <- State.StoppedDueToError
-            error <- Error.SyntaxError
-        | Error _ -> dontcare()
+            error <- err
         | Ok cmds ->
 
             let warning_sink (err : type_error_desc, loc : location) =
@@ -290,14 +304,8 @@ type Interpreter(config : config) as this =
 
             match attempt (Typechk.type_command_list warning_sink tyenv) cmds with
             | Error (Type_error (err, loc)) ->
-                pfn "> %s" (Syntax.describe_location loc)
-                pfn "%s" (Printer.print_typechk_error lang cols err)
                 state <- State.StoppedDueToError
-                error <- TypeError (tyenv, err, loc)
-            | Error (InvalidTypeHideRequest msg) ->
-                pfn "> Invalid type hide request. (%s.)" msg
-                state <- State.StoppedDueToError
-                error <- Error.Other
+                error <- Error.TypeError (err, loc)
             | Error x -> dontcare()
             | Ok (tyenvs, ccmds) ->
                 let genv_size, tcmds = Translate.translate_command_list alloc tyenvs ccmds

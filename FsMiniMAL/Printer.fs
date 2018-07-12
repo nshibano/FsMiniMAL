@@ -555,6 +555,7 @@ let print_typechk_error lang cols desc =
         | This_expression_is_not_a_record -> "This expression is not a record."
         | Partially_applied -> "Beware, this function is partially applied."
         | Useless_with_clause -> "All the fields are explicitly listed in this record: the 'with' clause is useless."
+        | Already_abstract name -> sprintf "Type %s is already abstract." name
 
     | Ja ->
         match desc with
@@ -618,3 +619,4 @@ let print_typechk_error lang cols desc =
         | This_expression_is_not_a_record -> "この式はレコードではありません。"
         | Partially_applied -> "この式は部分適用されています。ご注意ください。"
         | Useless_with_clause -> "全てのフィールドが明示的に与えられているため、 with 節は不要です。"
+        | Already_abstract name -> sprintf "型 %s は既に抽象型です。" name

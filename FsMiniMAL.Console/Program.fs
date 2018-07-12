@@ -7,6 +7,12 @@ open FsMiniMAL
 
 [<EntryPoint>]
 let main argv =
+
+    let lang =
+        match System.Globalization.CultureInfo.CurrentCulture.Name with
+        | "ja-JP" -> Ja
+        | _ -> En
+
     let history =
         let path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "mal_history.txt")
         try
@@ -57,5 +63,8 @@ let main argv =
                     else
                         mal.Run(1000L)
                     true
-                else false) do ()
+                else
+                    if mal.State = State.StoppedDueToError then
+                        Console.WriteLine(FsMiniMAL.ErrorPrinter.string_of_error lang 80 mal.Error)
+                    false) do ()
     0

@@ -186,19 +186,6 @@ let remove_type tyenv info =
                     labels = e.labels.Remove(name, (fun li -> match li.li_res with Tconstr (id', _) -> id = id' | _ -> false)) }) e l
     | _ -> e
 
-exception InvalidTypeHideRequest of string
-
-let hide_type (tyenv : tyenv) name =
-        match tyenv.types.TryFind(name) with
-        | Some info ->
-            match info.ti_kind with
-            | Kbasic -> raise (InvalidTypeHideRequest ("type " + name + " is already abstract"))
-            | _ -> ()
-            let tyenv = remove_type tyenv info
-            let info = { info with ti_kind = Kbasic }
-            add_type tyenv info
-        | None -> raise (InvalidTypeHideRequest ("type " + name + " is not defined"))
-
 let add_exn_constructor tyenv name args =
     let tag = tyenv.exn_constructors.Length
     let ci = { ci_params = []
