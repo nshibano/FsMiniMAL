@@ -80,8 +80,6 @@ type State =
     | Finished = 2
     | StoppedDueToError = 3
 
-exception MALStackOverflow
-
 type Message =
     | TypeError of Typechk.type_error_desc * location
     | EvaluationComplete of tyenv * type_expr * value
@@ -96,7 +94,8 @@ type Error =
     | SyntaxError of location
     | TypeError of Typechk.type_error_desc * location
     | UncaughtException of value
-    | UncatchableException of exn
+    | MALInsufficientMemory
+    | MALStackOverflow
     | EnvSizeLimit
 
 type Interpreter(config : config) as this =
@@ -160,11 +159,11 @@ type Interpreter(config : config) as this =
             buf.Add(Printer.print_value_without_type tyenv cols ty_exn exn_value)
             buf.AppendLine() |> ignore
             stacktrace 10 buf
-        | UncatchableException exn ->
-            buf.Add("UncatchableException: ")
-            buf.Add(exn.GetType().Name)
-            buf.AppendLine() |> ignore
+        | MALStackOverflow ->
+            buf.Add("StackOverflow\r\n")
             stacktrace 10 buf
+        | MALInsufficientMemory ->
+            buf.Add("InsufficientMemory\r\n")
         | EnvSizeLimit ->
             bprintf buf "> Size of the global env hits the limit.\r\n"
         buf.ToString()
@@ -477,7 +476,7 @@ type Interpreter(config : config) as this =
                                 do_raise v
                                 false
                             | Value.InsufficientMemory as e ->
-                                error <- Error.UncatchableException e
+                                error <- Error.MALInsufficientMemory
                                 state <- State.StoppedDueToError
                                 false
                     if cont then
@@ -696,7 +695,7 @@ type Interpreter(config : config) as this =
                                 match e with
                                 | MALException v -> do_raise v
                                 | Value.InsufficientMemory ->
-                                    error <- Error.UncatchableException e
+                                    error <- Error.MALInsufficientMemory
                                     state <- State.StoppedDueToError
                                 | _ -> raise e
                         | Vclosure (arity = arity; env_size = env_size; captures = captures; offsets = offsets; code = code) ->
@@ -911,10 +910,10 @@ type Interpreter(config : config) as this =
                     state <- State.Finished
                 elif stack_topidx + 1 >= config.maximum_stack_depth then
                     state <- State.StoppedDueToError
-                    error <- Error.UncatchableException MALStackOverflow
+                    error <- Error.MALStackOverflow
                 elif not (check_free_memory rt 0) then
                     state <- State.StoppedDueToError
-                    error <- Error.UncatchableException InsufficientMemory
+                    error <- Error.MALInsufficientMemory
 
     let alias_exn new_name orig_name =
         let vi = tyenv.values.[orig_name]
