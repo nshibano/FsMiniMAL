@@ -979,7 +979,7 @@ type checked_command =
     | CCfun of (string * expression) list * (string * value_info) list * location
     | CCvar of (string * expression) list * (string * value_info) list * location
     | CCtype of typedef list * location
-    | CChide of string * location
+    | CChide of string
     | CChideval of string
     | CCexn of string * location
 
@@ -994,10 +994,10 @@ let type_command_list warning_sink tyenv cmds =
             tyenvs.Add(tyenv)
             ccmds.Add (CCtype (dl, cmd.sc_loc))
             tyenv <- tyenv'
-        | { sc_desc = SChide (name, loc) } -> 
+        | { sc_desc = SChide name } -> 
             let tyenv' = hide_type tyenv name cmd.sc_loc
             tyenvs.Add(tyenv)
-            ccmds.Add (CChide (name, loc))
+            ccmds.Add (CChide name)
             tyenv <- tyenv'
         | { sc_desc = SChideval name } ->
             if tyenv.values.ContainsKey(name) then

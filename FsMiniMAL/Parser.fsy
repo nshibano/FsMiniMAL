@@ -129,7 +129,7 @@ Definition :
     | FUN Function_def       { make_cmd parseState (SCfun $2) }
     | VAR Var_def            { make_cmd parseState (SCvar $2) }
     | TYPE Typedef_list      { make_cmd parseState (SCtype $2) }
-    | HIDE IDENT             { make_cmd parseState (SChide ($2, get_term_loc parseState 2)) }
+    | HIDE IDENT             { make_cmd parseState (SChide ($2)) }
     | HIDEVAL IDENT          { make_cmd parseState (SChideval $2) }
     | EXCEPTION Constr1_decl { make_cmd parseState (SCexn $2) }
 

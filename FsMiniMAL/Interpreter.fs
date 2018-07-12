@@ -202,7 +202,7 @@ type Interpreter(config : config) as this =
                         captures.[l] <- env.[ofss_from.[l]]
                 | _ -> dontcare()
         | UTCtype (dl, _) -> List.iter (fun d -> pfn "type %s defined." d.sd_name) dl
-        | UTChide (name, _) -> pfn "type %s is now abstract." name
+        | UTChide name -> pfn "type %s is now abstract." name
         | UTChideval name -> pfn "Value %s is now hidden." name
         | UTCexn (name, _) -> pfn "exception %s defined." name
         | UTCupd (tyenv', alloc', shadowed) ->

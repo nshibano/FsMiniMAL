@@ -83,7 +83,7 @@ and code =
 
   // toplevel commands
   | UTCtype of Syntax.typedef list * Syntax.location
-  | UTChide of string * Syntax.location
+  | UTChide of string
   | UTChideval of string
   | UTCexn of string * Syntax.location
   | UTCupd of tyenv * Allocator * shadowed_genv_offsets : int array option

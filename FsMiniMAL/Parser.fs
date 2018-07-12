@@ -822,7 +822,7 @@ let _fsyacc_reductions ()  =    [|
                 (
                    (
 # 132 "Parser.fsy"
-                                                    make_cmd parseState (SChide (_2, get_term_loc parseState 2)) 
+                                                    make_cmd parseState (SChide (_2)) 
                    )
 # 132 "Parser.fsy"
                  : 'Definition));

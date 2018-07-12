@@ -94,7 +94,7 @@ and command_desc =
     | SCfun of (string * expression) list // The expression for this case is always SEfn
     | SCvar of (string * expression) list
     | SCtype of typedef list
-    | SChide of string * location // location in this case is range of type name token in source
+    | SChide of string
     | SChideval of string
     | SCexn of string * type_expr list
 

@@ -265,8 +265,8 @@ let translate_command_list (alloc : Allocator) (tyenvs : tyenv array) (ccmds : c
         | CCtype (defs, loc) ->
             tcmds.Add(UTCtype(defs, loc))
             tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), None))
-        | CChide (name, loc) ->
-            tcmds.Add(UTChide(name, loc))
+        | CChide name ->
+            tcmds.Add(UTChide name)
             tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), None))
         | CChideval name ->
             let ofs, _ = alloc.Get(name)
