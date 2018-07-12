@@ -90,24 +90,6 @@ type Error =
     | UncatchableException of exn
     | EnvSizeLimit
 
-module ErrorPrinter =
-
-    let string_of_error (lang : lang) (cols : int) (err : Error) =
-        let buf = new StringBuilder()
-        match err with
-        | LexicalError (lex_err, loc) ->
-            bprintf buf "> %s\r\n  Lexical error (%A)." (Syntax.describe_location loc) lex_err
-        | SyntaxError loc ->
-            bprintf buf "> %s\r\n  Syntax error." (Syntax.describe_location loc)
-        | TypeError (type_err, loc) ->
-            bprintf buf "> %s\r\n" (Syntax.describe_location loc)
-            bprintf buf "%s" (Printer.print_typechk_error lang cols type_err)
-        | EnvSizeLimit ->
-            bprintf buf "> Size of the global env hits the limit."
-        | _ ->
-            bprintf buf "Error."
-        buf.ToString()
-
 type Interpreter(config : config) as this =
 
     let mutable state = State.Finished
@@ -411,6 +393,30 @@ type Interpreter(config : config) as this =
             | UCval _ -> pfni "Val"
             | UCvar _ -> pfni "Var"
             | _ -> pfn "  Error"
+
+    let string_of_error (lang : lang) (cols : int) (err : Error) =
+        let buf = new StringBuilder()
+        match err with
+        | LexicalError (lex_err, loc) ->
+            bprintf buf "> %s\r\n  Lexical error (%A).\r\n" (Syntax.describe_location loc) lex_err
+        | SyntaxError loc ->
+            bprintf buf "> %s\r\n  Syntax error.\r\n" (Syntax.describe_location loc)
+        | TypeError (type_err, loc) ->
+            bprintf buf "> %s\r\n" (Syntax.describe_location loc)
+            bprintf buf "%s\r\n" (Printer.print_typechk_error lang cols type_err)
+        | UncaughtException exn_value ->
+            buf.Add("UncaughtException: ")
+            buf.Add(Printer.print_value_without_type tyenv cols ty_exn exn_value)
+            buf.AppendLine() |> ignore
+            stacktrace 10 buf
+        | UncatchableException exn ->
+            buf.Add("UncatchableException: ")
+            buf.Add(exn.GetType().Name)
+            buf.AppendLine() |> ignore
+            stacktrace 10 buf
+        | EnvSizeLimit ->
+            bprintf buf "> Size of the global env hits the limit.\r\n"
+        buf.ToString()
 
     let run (slice_ticks : int64) =
         
@@ -889,24 +895,6 @@ type Interpreter(config : config) as this =
                     state <- State.StoppedDueToError
                     error <- Error.UncatchableException InsufficientMemory
 
-        if state = State.StoppedDueToError then
-            match error with
-            | Error.UncaughtException exn_value ->
-                let sb = new StringBuilder()
-                sb.Add("UncaughtException: ")
-                sb.Add(Printer.print_value_without_type tyenv cols ty_exn exn_value)
-                sb.AppendLine() |> ignore
-                stacktrace 10 sb
-                rt.print_string (sb.ToString())
-            | Error.UncatchableException exn ->
-                let sb = new StringBuilder()
-                sb.Add("UncatchableException: ")
-                sb.Add(exn.GetType().Name)
-                sb.AppendLine() |> ignore
-                stacktrace 10 sb
-                rt.print_string (sb.ToString())
-            | _ -> ()
-
     let alias_exn new_name orig_name =
         let vi = tyenv.values.[orig_name]
         tyenv <- Types.add_value tyenv new_name vi
@@ -936,6 +924,7 @@ type Interpreter(config : config) as this =
     member this.PrintString with get() = rt.print_string and set ps = rt.print_string <- ps
     member this.Runtime = rt
     member this.Cancel() = cancel()
+    member this.StringOfError(lang, cols, err) = string_of_error lang cols error
 
     /// Returns true when interpreter state is Running or Sleeping.
     member this.IsRunning

@@ -65,6 +65,6 @@ let main argv =
                     true
                 else
                     if mal.State = State.StoppedDueToError then
-                        Console.WriteLine(FsMiniMAL.ErrorPrinter.string_of_error lang 80 mal.Error)
+                        Console.Write(mal.StringOfError(lang, 80, mal.Error))
                     false) do ()
     0
