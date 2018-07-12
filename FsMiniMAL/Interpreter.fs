@@ -283,7 +283,12 @@ type Interpreter(config : config) as this =
             error <- Error.SyntaxError
         | Error _ -> dontcare()
         | Ok cmds ->
-            match attempt (Typechk.type_command_list rt.print_string tyenv) cmds with
+
+            let errsink (err : type_error_desc, loc : location) =
+                pfn "> %s" (Syntax.describe_location loc)
+                pfn "%s" (Printer.print_typechk_error lang cols err)
+
+            match attempt (Typechk.type_command_list errsink tyenv) cmds with
             | Error (Type_error (err, loc)) ->
                 pfn "> %s" (Syntax.describe_location loc)
                 pfn "%s" (Printer.print_typechk_error lang cols err)

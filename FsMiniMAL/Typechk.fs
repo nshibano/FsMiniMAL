@@ -59,6 +59,8 @@ type type_error_desc =
     | Partially_applied
     | Useless_with_clause
 
+type errsink = (type_error_desc * location) -> unit
+
 exception Type_error of type_error_desc * location
  
 /// Throws Type_error if name list contains duplicated name.
@@ -553,7 +555,7 @@ let type_printf_cmds cmds ty_result =
         | _ -> raise PrintfFormat.InvalidFormatString
     loop cmds
 
-let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary<string, type_expr>) (current_level : int) (ty_expected : type_expr) (e : expression) =
+let rec expression (errsink : errsink) (tyenv : tyenv) (type_vars : Dictionary<string, type_expr>) (current_level : int) (ty_expected : type_expr) (e : expression) =
     match e.se_desc with
     | SEid (("+" | "-" | "*" | "/" | "~-") as op) ->
         let ty_float_result, ty_int_result = if op = "~-" then ty_ff, ty_ii else ty_fff, ty_iii
@@ -586,10 +588,10 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
             match repr ty_expected with
             | Ttuple tyl when tyl.Length = el.Length -> tyl
             | _ -> List.init el.Length (fun _ -> new_tvar current_level)
-        Ttuple (List.map2 (expression ps tyenv type_vars current_level) tyl_expected el)
+        Ttuple (List.map2 (expression errsink tyenv type_vars current_level) tyl_expected el)
     | SEarray el ->
         let ty_accu = new_tvar current_level
-        List.iter (expression_expect ps tyenv type_vars current_level ty_accu) el
+        List.iter (expression_expect errsink tyenv type_vars current_level ty_accu) el
         Tconstr (type_id.ARRAY, [ ty_accu ])
     | SEstring s ->
         match repr ty_expected with
@@ -607,7 +609,7 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
         // infer orig of { orig with ... }.
         let ty_orig =
             Option.bind (fun e ->
-                let ty = expression ps tyenv type_vars current_level ty_expected e
+                let ty = expression errsink tyenv type_vars current_level ty_expected e
                 // if orig is available but is neither of record nor tvar, report type error
                 if not ((is_record tyenv ty).IsSome || is_tvar ty) then
                     raise (Type_error (This_expression_is_not_a_record, e.se_loc))
@@ -654,12 +656,11 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
         | None, false ->
             raise (Type_error (Some_labels_are_missing, e.se_loc))
         | Some _, true ->
-            let { st = st; ed = ed } = e.se_loc
-            Printf.kprintf ps "> Char %d-%d : all the fields are explicitly listed in this record: the 'with' clause is useless.\r\n" st.AbsoluteOffset ed.AbsoluteOffset
+            errsink (Useless_with_clause, e.se_loc)
         | _ -> ()
 
         // typecheck for field expressions
-        List.iter (fun (_, _, ty_field, _, e) -> expression_expect ps tyenv type_vars current_level ty_field e) fields
+        List.iter (fun (_, _, ty_field, _, e) -> expression_expect errsink tyenv type_vars current_level ty_field e) fields
 
         e.se_desc <- SEurecord ((List.map (fun (_, idx, _, access, e) -> (idx, access, e)) fields), orig)
         ty_res
@@ -677,12 +678,12 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
             match ty_args, e_args with
             | [], _ -> raise (Type_error(Constructor_takes_no_argument s, e1.se_loc))
             | [ty_arg], _ ->
-                expression_expect ps tyenv type_vars current_level ty_arg e_args
+                expression_expect errsink tyenv type_vars current_level ty_arg e_args
                 e.se_desc <- SEconstr (info.ci_tag, [e_args])
                 ty_res
             | _, { se_desc = SEtuple el } ->
                 if List.length el = List.length ty_args then
-                    List.iter2 (expression_expect ps tyenv type_vars current_level) ty_args el
+                    List.iter2 (expression_expect errsink tyenv type_vars current_level) ty_args el
                     e.se_desc <- SEconstr (info.ci_tag, el)
                     ty_res
                 else raise (Type_error(Constructor_used_with_wrong_number_of_arguments (s, ty_args.Length, el.Length), e1.se_loc))
@@ -698,11 +699,11 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
             else // = 1
                 ty_ff, ty_ii
         if same_type tyenv ty_expected ty_float_res then
-            List.iter (expression_expect ps tyenv type_vars current_level ty_float) el_args
+            List.iter (expression_expect errsink tyenv type_vars current_level ty_float) el_args
             e_op.se_desc <- SEid (op + ".")            
             ty_float_res
         else
-            let tyl_args = List.map (fun e -> expression ps tyenv type_vars current_level (new_tvar current_level) e) el_args
+            let tyl_args = List.map (fun e -> expression errsink tyenv type_vars current_level (new_tvar current_level) e) el_args
             let mutable float_count = 0
             let mutable tvar_count = 0
             for ty in tyl_args do
@@ -711,14 +712,14 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
                 elif is_tvar ty then
                     tvar_count <- tvar_count + 1
             if float_count > 0 && (float_count + tvar_count) = tyl_args.Length then
-                List.iter (expression_expect ps tyenv type_vars current_level ty_float) el_args
+                List.iter (expression_expect errsink tyenv type_vars current_level ty_float) el_args
                 e_op.se_desc <- SEid (op + ".")
                 ty_float_res
             else
                 List.iter2 (fun e_arg ty_arg -> unify_exp tyenv e_arg ty_arg ty_int) el_args tyl_args
                 ty_int_res
     | SEapply ({ se_desc = SEid ".[]"}, [e_arg0; e_arg1]) ->
-        let ty_arg0 = expression ps tyenv type_vars current_level (new_tvar current_level) e_arg0
+        let ty_arg0 = expression errsink tyenv type_vars current_level (new_tvar current_level) e_arg0
         let ty_result =
             if same_type tyenv ty_arg0 ty_string then
                 ty_char
@@ -727,19 +728,19 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
                 let ty_array = Tconstr (type_id.ARRAY, [ty_item])
                 unify_exp tyenv e_arg0 ty_arg0 ty_array
                 ty_item
-        expression_expect ps tyenv type_vars current_level ty_int e_arg1
+        expression_expect errsink tyenv type_vars current_level ty_int e_arg1
         ty_result
-    | SEapply ({ se_desc = SEid "^" } as e0, [e1; e2]) when same_type tyenv ty_string (expression ps tyenv type_vars current_level (new_tvar current_level) e1) && same_type tyenv ty_string (expression ps tyenv type_vars current_level (new_tvar current_level) e2) ->
+    | SEapply ({ se_desc = SEid "^" } as e0, [e1; e2]) when same_type tyenv ty_string (expression errsink tyenv type_vars current_level (new_tvar current_level) e1) && same_type tyenv ty_string (expression errsink tyenv type_vars current_level (new_tvar current_level) e2) ->
             e0.se_desc <- SEid "^^"
             ty_string
     | SEapply (e1, el) ->
-        let ty1 = expression ps tyenv type_vars current_level (new_tvar current_level) e1
+        let ty1 = expression errsink tyenv type_vars current_level (new_tvar current_level) e1
         try filter_arrow tyenv current_level ty1 |> ignore
         with Unify -> raise (Type_error (This_expression_is_not_a_function, e1.se_loc))
         let ty_args, ty_res =
             try split_last (filter_arrow_n tyenv current_level el.Length ty1)
             with Unify -> raise (Type_error (Too_many_arguments_for_this_function, e1.se_loc))
-        List.iter2 (fun ty e -> expression_expect ps tyenv type_vars current_level ty e) ty_args el
+        List.iter2 (fun ty e -> expression_expect errsink tyenv type_vars current_level ty e) ty_args el
         ty_res
     | SEfn (patl, e1) ->
         let ty_args_expected, ty_result_expected = split_last (try_filter_arrow_n tyenv current_level (patl.Length) ty_expected)
@@ -748,7 +749,7 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
         List.iter2 (fun ty ty_expected -> try unify tyenv ty ty_expected with Unify -> ()) ty_args ty_args_expected
         let names = List.map get_pattern_name patl
         let tyenv = add_values tyenv new_bnds
-        let ty_res = expression ps tyenv type_vars current_level ty_result_expected e1
+        let ty_res = expression errsink tyenv type_vars current_level ty_result_expected e1
         List.foldBack2 (fun name ty1 ty2 -> Tarrow (name, ty1, ty2)) names ty_args ty_res
     | SEbegin cl ->
         if cl.Length = 0 then ty_unit
@@ -758,42 +759,42 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
             match res.sc_desc with
             | SCexpr e1 ->
                 let tyenv = List.fold (fun tyenv c ->
-                    let new_bnds = command tyenv ps type_vars current_level c
+                    let new_bnds = command tyenv errsink type_vars current_level c
                     Types.add_values tyenv new_bnds) tyenv cl' 
-                expression ps tyenv type_vars current_level ty_expected e1
+                expression errsink tyenv type_vars current_level ty_expected e1
             | _ ->
                 List.fold (fun tyenv c ->
-                    let new_bnds = command tyenv ps type_vars current_level c
+                    let new_bnds = command tyenv errsink type_vars current_level c
                     Types.add_values tyenv new_bnds) tyenv cl |> ignore
                 ty_unit
     | SEcase (e, cases) ->
-        let ty_arg = expression ps tyenv type_vars current_level (new_tvar current_level) e
+        let ty_arg = expression errsink tyenv type_vars current_level (new_tvar current_level) e
         let ty_res = new_tvar current_level
         List.iter (fun (pat, ew, e) ->
             let ty_pat, new_values = pattern tyenv type_vars current_level ty_arg pat
             unify_pat tyenv pat ty_pat ty_arg
             let tyenv = add_values tyenv new_values
-            Option.iter (fun ew -> expression_expect ps tyenv type_vars current_level ty_bool ew) ew
-            expression_expect ps tyenv type_vars current_level ty_res e) cases;
+            Option.iter (fun ew -> expression_expect errsink tyenv type_vars current_level ty_bool ew) ew
+            expression_expect errsink tyenv type_vars current_level ty_res e) cases;
         ty_res
     | SEtry (e, cases) ->
         if not (List.forall (function (_, None, _) -> true | (_, Some _, _) -> false) cases) then raise (Type_error (Cannot_use_when_clause_in_try_construct, e.se_loc))
-        let ty_arg = expression ps tyenv type_vars current_level (new_tvar current_level) e
+        let ty_arg = expression errsink tyenv type_vars current_level (new_tvar current_level) e
         List.iter (fun (pat, _, e) ->
             let ty_pat, new_values = pattern tyenv type_vars current_level (new_tvar current_level) pat
             unify_pat tyenv pat ty_pat ty_exn
             let tyenv = add_values tyenv new_values
-            expression_expect ps tyenv type_vars current_level ty_arg e) cases
+            expression_expect errsink tyenv type_vars current_level ty_arg e) cases
         ty_arg
     | SEifthenelse (e1, e2, e3) ->
-        expression_expect ps tyenv type_vars current_level ty_bool e1
+        expression_expect errsink tyenv type_vars current_level ty_bool e1
         match e3 with
         | Some e3 ->
-            let ty_res = expression ps tyenv type_vars current_level (new_tvar current_level) e2
-            expression_expect ps tyenv type_vars current_level ty_res e3
+            let ty_res = expression errsink tyenv type_vars current_level (new_tvar current_level) e2
+            expression_expect errsink tyenv type_vars current_level ty_res e3
             ty_res
         | None ->
-            expression_expect ps tyenv type_vars current_level ty_unit e2
+            expression_expect errsink tyenv type_vars current_level ty_unit e2
             ty_unit
     | SEset (s, e1) ->
         match tyenv.values.TryGetValue(s) with
@@ -801,10 +802,10 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
         | true, info ->
             if info.vi_access = access.Immutable then
                 raise (Type_error (Not_mutable (Variable, s), e.se_loc))
-            expression_expect ps tyenv type_vars current_level info.vi_type e1;
+            expression_expect errsink tyenv type_vars current_level info.vi_type e1;
             Ttuple []
     | SEgetfield (e1, s) ->
-        let ty1 = expression ps tyenv type_vars current_level (new_tvar current_level) e1
+        let ty1 = expression errsink tyenv type_vars current_level (new_tvar current_level) e1
         let candidates = tyenv.labels.FindAll s
         let info_from_ty1 =
             match repr ty1 with
@@ -820,7 +821,7 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
         e.se_desc <- SEugetfield (e1, info.li_index)
         ty_field
     | SEsetfield (e1, s, e2) ->
-        let ty1 = expression ps tyenv type_vars current_level (new_tvar current_level) e1
+        let ty1 = expression errsink tyenv type_vars current_level (new_tvar current_level) e1
         let candidates = tyenv.labels.FindAll s
         let info_from_ty1 =
             match repr ty1 with
@@ -835,51 +836,50 @@ let rec expression (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary
             raise (Type_error (Not_mutable (Label, s), e.se_loc))
         let ty_field, ty_record = instanciate_label current_level info
         unify_exp tyenv e1 ty1 ty_record 
-        expression_expect ps tyenv type_vars current_level ty_field e2
+        expression_expect errsink tyenv type_vars current_level ty_field e2
         e.se_desc <- SEusetfield (e1, info.li_index, e2)
         ty_unit
     | SEugetfield _ | SEusetfield _ -> dontcare ()
     | SEfor (s, e1, _, e2, e3) ->
-        expression_expect ps tyenv type_vars current_level ty_int e1
-        expression_expect ps tyenv type_vars current_level ty_int e2
+        expression_expect errsink tyenv type_vars current_level ty_int e1
+        expression_expect errsink tyenv type_vars current_level ty_int e2
         let tyenv = add_value tyenv s { vi_type = ty_int; vi_access = access.Immutable }
-        statement tyenv ps type_vars current_level e3 |> ignore
+        statement tyenv errsink type_vars current_level e3 |> ignore
         Ttuple []
     | SEwhile (e1, e2) ->
-        expression_expect ps tyenv type_vars current_level ty_bool e1
-        statement tyenv ps type_vars current_level e2 |> ignore
+        expression_expect errsink tyenv type_vars current_level ty_bool e1
+        statement tyenv errsink type_vars current_level e2 |> ignore
         Ttuple []
     | SEtype (e1, sty) ->
         let ty = type_expr tyenv false type_vars sty
-        expression_expect ps tyenv type_vars current_level ty e1
+        expression_expect errsink tyenv type_vars current_level ty e1
         ty
     | SEformat _ -> dontcare()
 
 /// Infer the type of expression with expectation. The expectation is used as hint.
 /// Returns unit and the result remains in ty_expected.
 /// Throws type error if failed.
-and expression_expect (ps : string -> unit) (tyenv : tyenv) (type_vars : Dictionary<string, type_expr>) current_level ty_expected e =
-    let ty = expression ps tyenv type_vars current_level ty_expected e
+and expression_expect (errsink : errsink) (tyenv : tyenv) (type_vars : Dictionary<string, type_expr>) current_level ty_expected e =
+    let ty = expression errsink tyenv type_vars current_level ty_expected e
     unify_exp tyenv e ty ty_expected
 
-and statement tyenv ps type_vars current_level e =
-    let ty = expression ps tyenv type_vars current_level (new_tvar current_level) e
+and statement tyenv errsink type_vars current_level e =
+    let ty = expression errsink tyenv type_vars current_level (new_tvar current_level) e
     match repr ty with
     | Tarrow _ ->
-        let {st = st; ed = ed} = e.se_loc
-        Printf.kprintf ps "> Char %d-%d : Beware, this function is partially applied.\n" st.AbsoluteOffset ed.AbsoluteOffset
+        errsink (Partially_applied, e.se_loc)
     | _ -> ()
     ty
 
-and command tyenv ps (type_vars : Dictionary<string, type_expr>) current_level (cmd : Syntax.command) =
+and command tyenv errsink (type_vars : Dictionary<string, type_expr>) current_level (cmd : Syntax.command) =
     match cmd.sc_desc with
     | SCexpr e ->
-        statement tyenv ps type_vars current_level e |> ignore
+        statement tyenv errsink type_vars current_level e |> ignore
         []
     | SCval l ->
         let ty_patl, new_bnds = pattern_list tyenv type_vars (current_level + 1) cmd.sc_loc (List.init l.Length (fun _ -> new_tvar current_level)) (List.map fst l)
         let l = List.map2 (fun (_, e) ty_pat -> (ty_pat, e)) l ty_patl
-        List.iter (fun (ty_pat, e) -> expression_expect ps tyenv type_vars (current_level + 1) ty_pat e) l
+        List.iter (fun (ty_pat, e) -> expression_expect errsink tyenv type_vars (current_level + 1) ty_pat e) l
         List.iter (fun (ty_pat, e) ->
             if not (is_nonexpansive e) then
                 make_nongen current_level ty_pat) l
@@ -896,7 +896,7 @@ and command tyenv ps (type_vars : Dictionary<string, type_expr>) current_level (
         let tyenv_with_dummy_info = add_values tyenv (List.map (fun (name, _, info) -> (name, info)) defs)
         let new_values =
             List.map (fun (name, expr, info) ->
-                let ty = expression ps tyenv_with_dummy_info type_vars (current_level + 1) (new_tvar (current_level + 1)) expr
+                let ty = expression errsink tyenv_with_dummy_info type_vars (current_level + 1) (new_tvar (current_level + 1)) expr
                 unify_exp tyenv_with_dummy_info expr ty info.vi_type
                 let info = { vi_type = ty; vi_access = access.Immutable; }
                 name, info) defs
@@ -908,19 +908,19 @@ and command tyenv ps (type_vars : Dictionary<string, type_expr>) current_level (
         all_differ cmd.sc_loc kind.Variable_name kind.Variable_definition names
 
         List.map (fun (s, e) ->
-            (s, { vi_type = expression ps tyenv type_vars current_level (new_tvar current_level) e; vi_access = access.Mutable })) l
+            (s, { vi_type = expression errsink tyenv type_vars current_level (new_tvar current_level) e; vi_access = access.Mutable })) l
     | SCtype _
     | SChide _
     | SChideval _
     | SCexn _ -> raise (Type_error (Cannot_use_this_command_inside_an_expression, cmd.sc_loc))
 
-let type_expression ps tyenv (e : Syntax.expression) =
-    let ty = expression ps tyenv (Dictionary<string, type_expr>()) 1 (new_tvar 1) e
+let type_expression errsink tyenv (e : Syntax.expression) =
+    let ty = expression errsink tyenv (Dictionary<string, type_expr>()) 1 (new_tvar 1) e
     if is_nonexpansive e then generalize 0 ty
     ty
 
-let type_command ps tyenv (cmd : Syntax.command) =
-    command tyenv ps (Dictionary<string, type_expr>()) 0 cmd
+let type_command errsink tyenv (cmd : Syntax.command) =
+    command tyenv errsink (Dictionary<string, type_expr>()) 0 cmd
 
 let tyenv_clone (tyenv : tyenv) =
     let tvars = Dictionary<type_var, type_var>(Misc.PhysicalEqualityComparer)
@@ -971,7 +971,7 @@ type checked_command =
     | CChideval of string
     | CCexn of string * location
 
-let type_command_list ps tyenv cmds =
+let type_command_list errsink tyenv cmds =
     let mutable tyenv = tyenv_clone tyenv
     let tyenvs = ResizeArray()
     let ccmds = ResizeArray()
@@ -1002,11 +1002,11 @@ let type_command_list ps tyenv cmds =
             ccmds.Add (CCexn (name, cmd.sc_loc))
             tyenv <- tyenv'
         | { sc_desc = SCexpr e } ->
-            let ty = type_expression ps tyenv e
+            let ty = type_expression errsink tyenv e
             tyenvs.Add(tyenv)
             ccmds.Add (CCexpr (e, ty, cmd.sc_loc))
         | { sc_desc = (SCval _ | SCvar _ | SCfun _) } as cmd ->
-            let new_values = type_command ps tyenv cmd
+            let new_values = type_command errsink tyenv cmd
             let tyenv' = Types.add_values tyenv new_values
             tyenvs.Add(tyenv)
             ccmds.Add (match cmd.sc_desc with
