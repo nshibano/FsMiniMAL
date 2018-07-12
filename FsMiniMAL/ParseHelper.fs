@@ -11,11 +11,6 @@ let get_loc (ps : IParseState) =
     let src = (ps.ParserLocalStore.["LexBuffer"] :?> LexBuffer<char>).BufferLocalStore.["src"] :?> string
     { src = src; st = st; ed = ed }
 
-let get_term_loc (ps : IParseState) (i : int) =
-    let st, ed = ps.InputRange i
-    let src = (ps.ParserLocalStore.["LexBuffer"] :?> LexBuffer<char>).BufferLocalStore.["src"] :?> string
-    { src = null; st = st; ed = ed }
-
 let make_typ (ps : IParseState) desc = 
     { st_desc = desc
       st_loc = get_loc ps }
@@ -36,8 +31,7 @@ let make_typedef (ps : IParseState) prms name kind =
     { sd_name = name
       sd_params = prms
       sd_kind = kind
-      sd_loc = get_loc ps
-      sd_nameloc =  get_term_loc ps 2 }
+      sd_loc = get_loc ps }
 
 let make_ident (ps : IParseState) s = 
     { se_desc = SEid s

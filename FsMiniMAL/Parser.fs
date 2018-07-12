@@ -2247,7 +2247,7 @@ let _fsyacc_reductions ()  =    [|
                 (
                    (
 # 322 "Parser.fsy"
-                                                                                 mark_as_typename parseState 1; make_typ parseState (STconstr(_1, [], get_term_loc parseState 1)) 
+                                                                                 mark_as_typename parseState 1; make_typ parseState (STconstr(_1, [])) 
                    )
 # 322 "Parser.fsy"
                  : 'Simple_type));
@@ -2259,7 +2259,7 @@ let _fsyacc_reductions ()  =    [|
                 (
                    (
 # 323 "Parser.fsy"
-                                                                                 mark_as_typename parseState 2; make_typ parseState (STconstr(_2, [_1], get_term_loc parseState 2)) 
+                                                                                 mark_as_typename parseState 2; make_typ parseState (STconstr(_2, [_1])) 
                    )
 # 323 "Parser.fsy"
                  : 'Simple_type));
@@ -2272,7 +2272,7 @@ let _fsyacc_reductions ()  =    [|
                 (
                    (
 # 324 "Parser.fsy"
-                                                                                 mark_as_typename parseState 6; make_typ parseState (STconstr(_6, _2 :: _4, get_term_loc parseState 6)) 
+                                                                                 mark_as_typename parseState 6; make_typ parseState (STconstr(_6, _2 :: _4)) 
                    )
 # 324 "Parser.fsy"
                  : 'Simple_type));

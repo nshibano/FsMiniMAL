@@ -5,8 +5,6 @@ open FsMiniMAL.Lexing
 
 type location = { src : string; st : Position; ed : Position }
 
-let dummy_loc : location = { src = ""; st = Position.Empty; ed = Position.Empty }
-
 type type_expr = 
     { st_desc : type_desc
       st_loc : location }
@@ -15,14 +13,13 @@ and type_desc =
     | STvar of string
     | STarrow of type_expr * type_expr
     | STtuple of type_expr list
-    | STconstr of string * type_expr list * location // location of type constructor name for text highlighting
+    | STconstr of string * type_expr list
 
 type typedef = 
     { sd_name : string
       sd_params : string list
       sd_kind : type_kind
-      sd_loc : location 
-      sd_nameloc : location }
+      sd_loc : location }
 
 and type_kind = 
     | SKabbrev of type_expr

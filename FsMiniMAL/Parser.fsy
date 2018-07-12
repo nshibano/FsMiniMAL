@@ -319,9 +319,9 @@ Type_star_list :
 
 Simple_type :
     | QUOTED                                              { make_typ parseState (STvar $1) }
-    | IDENT                                               { mark_as_typename parseState 1; make_typ parseState (STconstr($1, [], get_term_loc parseState 1)) }
-    | Simple_type IDENT                                   { mark_as_typename parseState 2; make_typ parseState (STconstr($2, [$1], get_term_loc parseState 2)) }
-    | LPAREN Type_expr COMMA Type_comma_list RPAREN IDENT { mark_as_typename parseState 6; make_typ parseState (STconstr($6, $2 :: $4, get_term_loc parseState 6)) }
+    | IDENT                                               { mark_as_typename parseState 1; make_typ parseState (STconstr($1, [])) }
+    | Simple_type IDENT                                   { mark_as_typename parseState 2; make_typ parseState (STconstr($2, [$1])) }
+    | LPAREN Type_expr COMMA Type_comma_list RPAREN IDENT { mark_as_typename parseState 6; make_typ parseState (STconstr($6, $2 :: $4)) }
     | LPAREN Type_expr RPAREN                             { $2 }
 
 Type_comma_list :

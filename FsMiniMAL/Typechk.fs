@@ -175,7 +175,7 @@ let rec type_expr tyenv is_typedef (type_vars : Dictionary<string, type_expr>) s
             ty
     | STarrow (st1, st2) -> Tarrow ("", (type_expr tyenv is_typedef type_vars st1), (type_expr tyenv is_typedef type_vars st2))
     | STtuple stl -> Ttuple (List.map (type_expr tyenv is_typedef type_vars) stl)
-    | STconstr (s, stl, _) ->
+    | STconstr (s, stl) ->
         match tyenv.types.TryFind s with
         | Some info ->
             if (List.length stl) <> (List.length info.ti_params) then
@@ -239,7 +239,7 @@ let add_typedef tyenv loc dl =
             | STvar _ -> ()
             | STarrow (ty1, ty2) -> visit ty1; visit ty2
             | STtuple l -> List.iter visit l
-            | STconstr (name, args, _) ->
+            | STconstr (name, args) ->
                 if abbrev_defs_map.ContainsKey name then
                     if visited.Contains name then
                         raise (Type_error (Type_definition_contains_immediate_cyclic_type_abbreviation, loc))
