@@ -8,7 +8,7 @@ To run REPL, open the solution on Visual Studio and start FsMiniMAL.Console proj
 
 ## Language features
 
-The language supports all common features of OCaml/F#.
+The language supports most common features of OCaml/F#.
 
 - Basic types (int, char, float, bool, string, array, list, option, ref)
 - Expressions and Patterns
