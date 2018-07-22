@@ -276,6 +276,56 @@ let add_stdlib (tyenv : tyenv) (genv : value array) (alloc : Allocator) =
         | _ -> dontcare ()
     add_func "array_blit" (arrow5 (ty_array a) ty_int (ty_array a) ty_int ty_int ty_unit) 5 array_blit_func
 
+    let string_length_func (rt : runtime) (argv : value array) =
+        match argv.[0] with
+        | Vstring (s, _) -> of_int rt s.Length
+        | _ -> dontcare()
+    add_func "string_length" (arrow ty_string ty_int) 1 string_length_func
+
+    let string_of_char_func (rt : runtime) (argv : value array) =
+        match argv.[0] with
+        | Vint (i, _) -> of_string rt (String(char i, 1))
+        | _ -> dontcare()
+    add_func "string_of_char" (arrow ty_char ty_string) 1 string_of_char_func
+
+    let string_of_char_array_func (rt : runtime) (argv : value array) =
+        match argv.[0] with
+        | Varray ary ->
+            let sb = StringBuilder(ary.count)
+            for i = 0 to ary.count - 1 do
+                match ary.storage.[i] with
+                | Vint (i, _) -> sb.Add(char i)
+                | _ -> dontcare()
+            of_string rt (sb.ToString())
+        | _ -> dontcare()
+    add_func "string_of_char_array" (arrow (ty_array ty_char) ty_string) 1 string_of_char_array_func
+
+    let char_array_of_string_func (rt : runtime) (argv : value array) =
+        match argv.[0] with
+        | Vstring (s, _) ->
+            let v = array_create rt s.Length
+            match v with
+            | Varray ary ->
+                for i = 0 to s.Length - 1 do
+                    ary.storage.[i] <- of_int rt (int s.[i])
+                ary.count <- s.Length
+                v
+            | _ -> dontcare()
+        | _ -> dontcare()
+    add_func "char_array_of_string" (arrow ty_string (ty_array ty_char)) 1 char_array_of_string_func
+
+    let string_concat_func (rt : runtime) (argv : value array) =
+        match argv.[0] with
+        | Varray ary ->
+            let sb = StringBuilder()
+            for i = 0 to ary.count - 1 do
+                match ary.storage.[i] with
+                | Vstring(s, _) -> sb.Add(s)
+                | _ -> dontcare()
+            of_string rt (sb.ToString())
+        | _ -> dontcare()
+    add_func "string_concat" (arrow (ty_array ty_string) ty_string) 1 string_concat_func
+
     let print_string_func (rt : runtime) (argv : value array) =
         rt.print_string (to_string argv.[0])
         Value.unit

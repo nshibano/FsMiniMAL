@@ -567,6 +567,8 @@ type Interpreter(config : config) as this =
                         do_raise (mal_failure rt "compare: functional value")
                     | Vformat _, Vformat _ ->
                         do_raise (mal_failure rt "compare: format string")
+                    | Vobj _, Vobj _ ->
+                        do_raise (mal_failure rt "compare: CLR object")
                     | _ -> dontcare()
                 elif frame.mode <= builtin_id.GREATER_EQUAL then
                     match frame.pc with
@@ -922,6 +924,9 @@ type Interpreter(config : config) as this =
         let new_ofs = alloc.Add(new_name, Immutable)
         env <- array_ensure_capacity_exn config.maximum_array_length (new_ofs + 1) env
         env.[new_ofs] <- env.[orig_ofs]
+    
+    let decoder_cache = Dictionary<Type, value -> obj>()
+    let encoder_cache = Dictionary<Type, runtime -> obj -> value>()
 
     do
         start Prelude.prelude
@@ -944,7 +949,7 @@ type Interpreter(config : config) as this =
     member this.PrintString with get() = rt.print_string and set ps = rt.print_string <- ps
     member this.Runtime = rt
     member this.Cancel() = cancel()
-    member this.StringOfError(lang, cols, err) = string_of_error lang cols error
+    member this.StringOfError(lang, cols, err) = string_of_error lang cols err
 
     /// Returns true when interpreter state is Running or Sleeping.
     member this.IsRunning
@@ -961,3 +966,38 @@ type Interpreter(config : config) as this =
     member this.Do(s) =
         start s
         run Int64.MaxValue
+
+    /// Internally calls Cancel()    
+    member this.Val<'T>(name : string, x : 'T) =
+        cancel()
+        let ty = Types.typeexpr_of_type tyenv (Dictionary()) typeof<'T>
+        tyenv <- Types.add_value tyenv name { vi_access = access.Immutable; vi_type = ty }
+        let enc = Value.create_encoder tyenv encoder_cache typeof<'T>
+        let v = enc Value.dummy_runtime x
+        let ofs = alloc.Add(name, Immutable)
+        env <- array_ensure_capacity_exn config.maximum_array_length (ofs + 1) env
+        env.[ofs] <- v
+    
+    /// Internally calls Cancel()    
+    member this.Fun<'T, 'U>(name : string, f : runtime -> 'T -> 'U) =
+        cancel()
+        let ty = Types.typeexpr_of_type tyenv (Dictionary()) typeof<'T -> 'U>
+        tyenv <- Types.add_value tyenv name { vi_access = access.Immutable; vi_type = ty }
+        let v = Value.wrap_fsharp_func tyenv decoder_cache encoder_cache typeof<runtime -> 'T -> 'U> f
+        let ofs = alloc.Add(name, Immutable)
+        env <- array_ensure_capacity_exn config.maximum_array_length (ofs + 1) env
+        env.[ofs] <- v
+    
+    member this.AddAbstractType(name : string, ty : Type) =
+        cancel()
+        tyenv <- fst (Types.register_abstract_type tyenv name ty)
+
+    /// Internally calls Cancel()    
+    member this.AddFsRecordType(name : string, ty : Type) =
+        cancel()
+        tyenv <- fst (Types.register_fsharp_record_type tyenv name ty)
+
+    /// Internally calls Cancel()    
+    member this.AddFsUnionType(name : string, ty : Type) =
+        cancel()
+        tyenv <- fst (Types.register_fsharp_union_type tyenv name ty)

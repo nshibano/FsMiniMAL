@@ -6,8 +6,6 @@ fun list_append l1 l2 =
   | (h1 :: t1, l2) -> h1 :: list_append t1 l2
   | ([], l2) -> l2;
 
-type 'a option = None | Some of 'a
-
 fun option_may f opt =
   case opt of
   | Some x -> f x
@@ -18,7 +16,6 @@ fun option_map f opt =
   | Some x -> Some (f x)
   | None -> None
 
-type 'a ref = { mutable contents : 'a }
 fun ref x = { contents = x }
 fun ref_set r x = r.contents <- x
 fun ref_get r = r.contents
@@ -45,6 +42,14 @@ fun array_init n f =
 fun array_iter (f : 'a -> unit) (a : 'a array) =
   for i = 0 to array_length a - 1 do
     f a.[i];
+
+fun string_map_to_array f s =
+  begin
+    val accu = [||];
+    for i = 0 to string_length s - 1 do
+      accu << f s.[i];
+    accu
+  end;
 
 fun id x = x;
 fun ignore x = ();
