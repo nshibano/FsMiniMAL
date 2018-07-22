@@ -21,8 +21,8 @@ The language supports most common features of OCaml/F#.
 
 - Sandboxing
 - Interop with F#
--- Automatic conversion from/to F# typed values
--- Automatic wrapper for F# functions
+  - Automatic conversion from/to F# typed values
+  - Automatic wrapper for F# functions
 
 ## Sandboxing
 
