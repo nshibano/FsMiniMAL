@@ -3,6 +3,7 @@
 open System
 open System.Collections.Generic
 open System.Text
+open System.Diagnostics
 open Printf
 
 open FsMiniMAL.Lexing
@@ -113,7 +114,8 @@ type Interpreter(config : config) as this =
     let mutable result = (unit, ty_unit)
     let rt =
         { memory_counter = ref 0
-          stopwatch = 0L
+          timestamp_at_start = 0L
+          cycles = 0L
           print_string = ignore
           config = config }
 
@@ -321,7 +323,6 @@ type Interpreter(config : config) as this =
                     accu <- of_compare (if Double.IsNaN x0 || Double.IsNaN x1 then Int32.MinValue else x0.CompareTo(x1))
                 | _ -> dontcare()
             | Vstring (s0, _), Vstring (s1, _) ->
-                rt.stopwatch <- rt.stopwatch + int64 s0.Length + int64 s1.Length
                 accu <- of_compare (Math.Sign(String.CompareOrdinal(s0, s1)))
             | _ ->
                 stack_push UEcompare { v0 = v0; v1 = v1; mode = mode; pc = Tag.Start; i = 0 }
@@ -441,9 +442,9 @@ type Interpreter(config : config) as this =
     let run (slice_ticks : int64) =
         
         if state = State.Sleeping then state <- State.Running
-        rt.stopwatch <- 0L
+        rt.timestamp_at_start <- Stopwatch.GetTimestamp()
 
-        while state = State.Running && rt.stopwatch < slice_ticks do
+        while state = State.Running && (Stopwatch.GetTimestamp() - rt.timestamp_at_start) < slice_ticks do
             let code = stack.[stack_topidx].code
             let frame = stack.[stack_topidx].frame
             match code with
@@ -905,8 +906,6 @@ type Interpreter(config : config) as this =
                 | _ -> dontcare()
             | _ -> dontcare()
 
-            rt.stopwatch <- rt.stopwatch + 1L
-
             if state = State.Running then
                 if stack_topidx + 1 = 0 then
                     state <- State.Finished
@@ -916,6 +915,8 @@ type Interpreter(config : config) as this =
                 elif not (check_free_memory rt 0) then
                     state <- State.StoppedDueToError
                     error <- Error.MALInsufficientMemory
+
+            rt.cycles <- rt.cycles + 1L
 
     let alias_exn new_name orig_name =
         let vi = tyenv.values.[orig_name]

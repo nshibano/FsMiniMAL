@@ -151,11 +151,12 @@ fun aatree n =
             let mutable accu_microseconds = 0L
             for j = 0 to repeat - 1 do
                 sw.Restart()
+                let cycles_at_start = mal.Runtime.cycles
                 mal.Do(cases.[i])
                 sw.Stop()
                 if mal.State <> State.Finished then failwith ""
                 cur <- min cur sw.ElapsedMicroseconds
-                accu_malticks <- accu_malticks + mal.Runtime.stopwatch
+                accu_malticks <- accu_malticks + (mal.Runtime.cycles - cycles_at_start)
                 accu_microseconds <- accu_microseconds + sw.ElapsedMicroseconds
             let cur_oldbest = int (Math.Round(100.0 * float cur / float oldbest.[i]))
             let newbest = min cur oldbest.[i]

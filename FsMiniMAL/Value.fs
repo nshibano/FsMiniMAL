@@ -129,12 +129,13 @@ and config =
         }
 
 and runtime =
-    {       
-      /// A rough estimate of elapsed time from start of time slice.
-      /// This value is set to 0 at start of time slice. Incremented for interpreter cycles.
-      /// For expensive builtin functions (e.g. array_copy), this field increased more at once. 
-      mutable stopwatch : int64
+    { 
+      /// The value obtained from System.Diagnostics.Stopwatch.GetTimestamp() at start of this time slice.
+      mutable timestamp_at_start : int64
 
+      /// The counter for interpreter cycles.
+      mutable cycles : int64
+      
       /// Total bytes used by mal values this interpreter owns.
       /// This field is increased when new mal value is created, and decreased when mal value is freed by CLR garbage collector. 
       memory_counter : int ref
@@ -148,7 +149,8 @@ exception InsufficientMemory
 
 let dummy_runtime =
     { runtime.memory_counter = ref 0
-      stopwatch = 0L
+      timestamp_at_start = 0L
+      cycles = 0L
       print_string = ignore
       config =
         { 
@@ -289,7 +291,6 @@ let array_remove_at (rt : runtime) (v : value) i =
 let array_clear (rt : runtime) (v : value) =
     match v with
     | Varray ary ->
-        rt.stopwatch <- rt.stopwatch + int64 ary.count
         for i = 0 to ary.count - 1 do
             ary.storage.[i] <- Unchecked.defaultof<value>
         ary.count <- 0
@@ -298,7 +299,6 @@ let array_clear (rt : runtime) (v : value) =
 let array_copy (rt : runtime) (orig : value) =
     match orig with
     | Varray { count = count; storage = storage } ->
-        rt.stopwatch <- rt.stopwatch + int64 count
         let copy = array_create rt count
         match copy with
         | Varray ({ storage = copy_storage } as copy_ary) ->
