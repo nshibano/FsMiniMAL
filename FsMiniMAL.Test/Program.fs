@@ -2,6 +2,10 @@
 open Printf
 
 open FsMiniMAL
+open FsMiniMAL.Value
+
+type foobar<'a> = Foo | Bar of hogefuga<'a>
+and hogefuga<'a> = Hoge of 'a | Fuga of foobar<'a>
 
 [<EntryPoint>]
 let main argv = 
@@ -371,6 +375,26 @@ let main argv =
     case "fun f (x : float) = x + x; f 1.0" "2.0"
     case "val f = ((fn x -> x + x) : float -> 'a); f 1.0" "2.0"
     case "val f = ((fn x -> x + x) : 'a -> float); f 1.0" "2.0"
+
+    let fsharp_interop () =
+        try
+            let mal = Interpreter()
+            mal.RegisterFsharpTypes([|("foobar", typedefof<foobar<_>>); ("hogefuga", typedefof<hogefuga<_>>)|])
+            mal.Fun("foobar_roundtrip", (fun rt (x : foobar<int>) -> x))
+            let getResult() =
+                let value, ty = mal.Result
+                Printer.print_value_without_type mal.TypeEnv 10000 ty value
+            let cases =
+                [| ("foobar_roundtrip Foo", "Foo")
+                   ("foobar_roundtrip (Bar (Hoge 0))", "Bar (Hoge 0)")
+                   ("foobar_roundtrip (Bar (Fuga Foo))", "Bar (Fuga Foo)") |]
+
+            for (src, result) in cases do
+                mal.Do(src)
+                if getResult() <> result then failwith (src + " => " + result)
+        with Failure msg -> printfn "Error(fsharp_interop): %s" msg
+    
+    fsharp_interop()
 
     printfn "Done."
     //printfn "Elapsed: %d (ms)" sw.ElapsedMilliseconds
