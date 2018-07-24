@@ -7,6 +7,8 @@ open System.Reflection
 open FSharp.Reflection
 
 open Types
+open System.Text
+open System.ComponentModel
 
 let sizeof_int, sizeof_float, block_overhead, block_increment, array_overhead, array_increment, string_overhead, string_increment =
     if IntPtr.Size = 8
@@ -226,8 +228,8 @@ let array_create (rt : runtime) (needed_capacity : int) =
     Varray { count = 0; storage = Array.zeroCreate<value> capacity; memory_counter = rt.memory_counter }
 
 /// raises InsufficientMemory, RuntimeTypeError
-let array_add (rt : runtime) (v : value) (x : value) =
-    match v with  
+let array_add (rt : runtime) (ary : value) (item : value) =
+    match ary with  
     | Varray ({ count = count; storage = storage } as ary) ->
         let capacity = if isNull storage then 0 else storage.Length
         if capacity < count + 1 then
@@ -240,7 +242,7 @@ let array_add (rt : runtime) (v : value) (x : value) =
             if not (isNull storage) then Array.blit storage 0 new_storage 0 count
             ary.storage <- new_storage
             Interlocked.Add(ary.memory_counter, increased_bytes) |> ignore
-        ary.storage.[ary.count] <- x
+        ary.storage.[ary.count] <- item
         ary.count <- ary.count + 1
     | _ -> dontcare()
 
@@ -349,6 +351,20 @@ let to_bool v =
     | Vint (1, _) -> true
     | _ -> dontcare()
 
+exception MALException of value // exception which user code can catch
+
+let mal_failure rt msg = block_createrange rt tag_exn_Failure [| of_string rt msg |]
+let mal_failwith rt msg = raise (MALException (mal_failure rt msg))
+
+let mal_DivisionByZero = of_int dummy_runtime tag_exn_DivisionByZero
+let mal_raise_DivisionByZero () = raise (MALException mal_DivisionByZero)
+
+let mal_IndexOutOfRange = of_int dummy_runtime tag_exn_IndexOutOfRange
+let mal_raise_IndexOutOfRange () = raise (MALException mal_IndexOutOfRange)
+
+let mal_MatchFailure = of_int dummy_runtime tag_exn_MatchFailure
+let mal_raise_MatchFailure () = raise (MALException mal_MatchFailure)
+
 let to_hash v =
     let mutable values_limit = 100
     let mutable meaningful_limit = 10
@@ -400,72 +416,78 @@ let to_hash v =
 
     accu
 
-let rec create_decoder (tyenv : tyenv) (decoder_cache : Dictionary<Type, value -> obj>) (ty : Type) =
-    match decoder_cache.TryGetValue(ty) with
-    | true, dec -> dec
+let rec obj_of_value (cache : Dictionary<Type, HashSet<value> -> value -> obj>) (tyenv : tyenv) (touch : HashSet<value>) (ty : Type) (value : value) =
+    if touch.Contains(value) then mal_failwith dummy_runtime "cyclic value in interop"
+    match cache.TryGetValue(ty) with
+    | true, f -> f touch value
     | false, _ ->
-        let new_decoder =
+        let f =
             if ty = typeof<unit> then
-                (fun (value : value) -> box ())
+                (fun (touch : HashSet<value>) (value : value) -> box ())
             elif ty = typeof<bool> then
-                (fun (value : value) -> box (to_bool value))
+                (fun (touch : HashSet<value>) (value : value) -> box (to_bool value))
             elif ty = typeof<int32> then
-                (fun (value : value) -> box (to_int value))
+                (fun (touch : HashSet<value>) (value : value) -> box (to_int value))
             elif ty = typeof<char> then
-                (fun (value : value) -> box (to_char value))
+                (fun (touch : HashSet<value>) (value : value) -> box (to_char value))
             elif ty = typeof<float> then
-                (fun (value : value) -> box (to_float value))
+                (fun (touch : HashSet<value>) (value : value) -> box (to_float value))
             elif ty = typeof<string> then
-                (fun (value : value) -> box (to_string value))
-            elif tyenv.registered_abstract_type.ContainsKey(ty) then
-                (fun (value : value) -> box (to_obj value))
+                (fun (touch : HashSet<value>) (value : value) -> box (to_string value))
+            elif tyenv.registered_abstract_types.ContainsKey(ty) then
+                (fun (touch : HashSet<value>) (value : value) -> box (to_obj value))
             elif ty.IsArray then
                 let ty_elem = ty.GetElementType()
-                let dec = create_decoder tyenv decoder_cache ty_elem
-                (fun (value : value) ->
+                (fun (touch : HashSet<value>) (value : value) ->
                     match value with
                     | Varray malarray ->
                         let array = System.Array.CreateInstance(ty_elem, malarray.count)
+                        touch.Add(value) |> ignore
                         for i = 0 to malarray.count - 1 do
-                            array.SetValue(dec malarray.storage.[i], i)
+                            array.SetValue(obj_of_value cache tyenv touch ty_elem malarray.storage.[i], i)
+                        touch.Remove(value) |> ignore
                         array :> obj
                     | _ -> dontcare())
             elif FSharpType.IsTuple ty then
                 let constr = FSharpValue.PreComputeTupleConstructor(ty)
                 let types = FSharpType.GetTupleElements(ty)
-                let decs = Array.map (fun ty -> create_decoder tyenv decoder_cache ty) types
-                (fun (value : value) ->
+                (fun (touch : HashSet<value>) (value : value) ->
                     let fields = block_getrange value
-                    let objs = Array.map2 (fun dec field -> dec field) decs fields
+                    touch.Add(value) |> ignore
+                    let objs = Array.map2 (fun ty field -> obj_of_value cache tyenv touch ty field) types fields
+                    touch.Remove(value) |> ignore
                     constr objs)
             elif FSharpType.IsRecord ty then
                 let constr = FSharpValue.PreComputeRecordConstructor(ty)
-                let fields = FSharpType.GetRecordFields(ty)
-                let decs = Array.map (fun (field : PropertyInfo) -> create_decoder tyenv decoder_cache field.PropertyType) fields
-                (fun value ->
+                let types = Array.map (fun (info : PropertyInfo) -> info.PropertyType) (FSharpType.GetRecordFields(ty))
+                (fun (touch : HashSet<value>) (value : value) ->
                     let fields = block_getrange value
-                    let objs = Array.map2 (fun dec field -> dec field) decs fields
+                    touch.Add(value) |> ignore
+                    let objs = Array.map2 (fun ty value -> obj_of_value cache tyenv touch ty value) types fields
+                    touch.Remove(value) |> ignore
                     constr objs)
             elif FSharpType.IsUnion ty then
                 let cases = FSharpType.GetUnionCases(ty)
                 let constrs = Array.map (fun (case : UnionCaseInfo) -> FSharpValue.PreComputeUnionConstructor(case)) cases
                 let case_field_types = Array.map (fun (case : UnionCaseInfo) -> Array.map (fun (prop : PropertyInfo) -> prop.PropertyType) (case.GetFields())) cases
-                let decs = Array.map (fun case -> Array.map (fun field -> create_decoder tyenv decoder_cache field) case) case_field_types
-                (fun value ->
+                (fun (touch : HashSet<value>) (value : value) ->
                     let tag = gettag value
-                    let decs = decs.[tag]
-                    let objs = Array.map2 (fun dec value -> dec value) decs (getfields value)
+                    let types = case_field_types.[tag]
+                    let fields = getfields value
+                    touch.Add(value) |> ignore
+                    let objs = Array.map2 (fun ty value -> obj_of_value cache tyenv touch ty value) types fields
+                    touch.Remove(value) |> ignore
                     constrs.[tag] objs)
             else
                 raise (NotImplementedException())
-        decoder_cache.[ty] <- new_decoder
-        new_decoder
+        cache.[ty] <- f
+        f touch value
 
-let rec create_encoder (tyenv : tyenv) (encoder_cache : Dictionary<Type, runtime -> obj -> value>) (ty : Type) =
-    match encoder_cache.TryGetValue(ty) with
-    | true, enc -> enc
+let rec value_of_obj (cache : Dictionary<Type, runtime -> obj -> value>) (tyenv : tyenv) (ty : Type) (rt : runtime) (obj : obj) =
+    match cache.TryGetValue(ty) with
+    | true, f -> f rt obj
     | false, _ ->
-        let new_encoder =
+        let f =
             if ty = typeof<unit> then
                 (fun (rt : runtime) (obj : obj) -> unit)
             elif ty = typeof<bool> then
@@ -478,28 +500,35 @@ let rec create_encoder (tyenv : tyenv) (encoder_cache : Dictionary<Type, runtime
                 (fun (rt : runtime) (obj : obj) -> of_float rt (obj :?> float))
             elif ty = typeof<string> then
                 (fun (rt : runtime) (obj : obj) -> of_string rt (obj :?> string))
-            elif tyenv.registered_abstract_type.ContainsKey(ty) then
+            elif tyenv.registered_abstract_types.ContainsKey(ty) then
                 (fun (rt : runtime) (obj : obj) -> of_obj obj)
+            elif ty.IsArray then
+                let ty_elem = ty.GetElementType()
+                (fun (rt : runtime) (obj : obj) ->
+                    let ary = obj :?> System.Array
+                    let len = ary.Length
+                    let malary = array_create rt len
+                    for i = 0 to len - 1 do
+                        array_add rt malary (value_of_obj cache tyenv ty_elem rt (ary.GetValue(i)))
+                    malary)
             elif FSharpType.IsTuple ty then
                 let reader = FSharpValue.PreComputeTupleReader(ty)
                 let types = FSharpType.GetTupleElements(ty)
-                let encs = Array.map (fun ty -> create_encoder tyenv encoder_cache ty) types
                 (fun (rt : runtime) (obj : obj) -> 
                     let objs = reader obj
-                    let values = Array.map2 (fun enc obj -> enc rt obj) encs objs
+                    let values = Array.map2 (fun ty obj -> value_of_obj cache tyenv ty rt obj) types objs
                     block_createrange rt 0 values)
             elif FSharpType.IsRecord ty then
                 let reader = FSharpValue.PreComputeRecordReader(ty)
                 let types = Array.map (fun (info : PropertyInfo) -> info.PropertyType) (FSharpType.GetRecordFields(ty))
-                let encs = Array.map (fun ty -> create_encoder tyenv encoder_cache ty) types
                 (fun (rt : runtime) (obj : obj) -> 
                     let objs = reader obj
-                    let values = Array.map2 (fun enc obj -> enc rt obj) encs objs
+                    let values = Array.map2 (fun ty obj -> value_of_obj cache tyenv ty rt obj) types objs
                     block_createrange rt 0 values)
             elif FSharpType.IsUnion ty then
                 let tag_reader = FSharpValue.PreComputeUnionTagReader(ty)
                 let cases = FSharpType.GetUnionCases(ty)
-                let case_encoders =
+                let fs =
                     Array.mapi (fun i (case : UnionCaseInfo) ->
                         if i <> case.Tag then dontcare()
                         let fields = case.GetFields()
@@ -507,22 +536,24 @@ let rec create_encoder (tyenv : tyenv) (encoder_cache : Dictionary<Type, runtime
                             (fun (rt : runtime) (obj : obj) ->
                                 of_int rt i)
                         else
-                            let field_encoders = Array.map (fun (field : PropertyInfo) -> create_encoder tyenv encoder_cache field.PropertyType) fields
+                            let field_types = Array.map (fun (field : PropertyInfo) -> field.PropertyType) fields
                             let case_reader = FSharpValue.PreComputeUnionReader(case)
                             (fun (rt : runtime) (obj : obj) ->
                                 let field_objs = case_reader obj
-                                let field_vals = Array.map2 (fun enc obj -> enc rt obj) field_encoders field_objs
+                                let field_vals = Array.map2 (fun ty obj -> value_of_obj cache tyenv ty rt obj) field_types field_objs
                                 block_createrange rt i field_vals)) cases
                 (fun (rt : runtime) (obj : obj) ->
                     let tag = tag_reader obj
-                    case_encoders.[tag] rt obj)
+                    fs.[tag] rt obj)
             else
                 raise (NotImplementedException())
 
-        encoder_cache.[ty] <- new_encoder
-        new_encoder
+        cache.[ty] <- f
+        f rt obj
 
-let wrap_fsharp_func (tyenv : tyenv) (decoder_cache : Dictionary<Type, value -> obj>) (encoder_cache : Dictionary<Type, runtime -> obj -> value>) (ty : Type) (func : obj) =
+let touch_create() = HashSet<value>(Misc.PhysicalEqualityComparer)
+
+let wrap_fsharp_func (tyenv : tyenv) (obj_of_value_cache : Dictionary<Type, HashSet<value> -> value -> obj>) (value_of_obj_cache : Dictionary<Type, runtime -> obj -> value>) (ty : Type) (func : obj) =
     
     let rec flatten ty =
         if FSharpType.IsFunction ty then
@@ -541,16 +572,15 @@ let wrap_fsharp_func (tyenv : tyenv) (decoder_cache : Dictionary<Type, value -> 
             let methods = typedefof<FSharpFunc<_, _>>.MakeGenericType(tyl.[0], tyl.[1]).GetTypeInfo().DeclaredMethods
             let invokefast_gen = Seq.find (fun (mi : MethodInfo) -> mi.Name = "InvokeFast" && mi.GetParameters().Length = 3) methods
             invokefast_gen.MakeGenericMethod(tyl.[2])
-        let dec0 = create_decoder tyenv decoder_cache tyl.[1]
-        let enc = create_encoder tyenv encoder_cache tyl.[2]
         let func rt values =
             match values with
             | [| arg0 |] ->
-                let arg0 = dec0 arg0
+                let touch = touch_create()
+                let arg0 = obj_of_value obj_of_value_cache tyenv touch tyl.[1] arg0
                 let result_obj =
                     try invokefast.Invoke(null, [| func; rt; arg0 |])
                     with :? System.Reflection.TargetInvocationException as exn -> raise exn.InnerException
-                enc rt result_obj
+                value_of_obj value_of_obj_cache tyenv  tyl.[2] rt result_obj
             | _ -> dontcare()
         Vfunc (1, func)
     | 4 ->
@@ -558,18 +588,16 @@ let wrap_fsharp_func (tyenv : tyenv) (decoder_cache : Dictionary<Type, value -> 
             let methods = typedefof<FSharpFunc<_, _>>.MakeGenericType(tyl.[0], tyl.[1]).GetTypeInfo().DeclaredMethods
             let invokefast_gen = Seq.find (fun (mi : MethodInfo) -> mi.Name = "InvokeFast" && mi.GetParameters().Length = 4) methods
             invokefast_gen.MakeGenericMethod(tyl.[2], tyl.[3])
-        let dec0 = create_decoder tyenv decoder_cache tyl.[1]
-        let dec1 = create_decoder tyenv decoder_cache tyl.[2]
-        let enc = create_encoder tyenv encoder_cache tyl.[3]
         let func rt values =
             match values with
             | [| arg0; arg1 |] ->
-                let arg0 = dec0 arg0
-                let arg1 = dec1 arg1
+                let touch = touch_create()
+                let arg0 = obj_of_value obj_of_value_cache tyenv touch tyl.[1] arg0
+                let arg1 = obj_of_value obj_of_value_cache tyenv touch tyl.[2] arg1
                 let result_obj =
                     try invokefast.Invoke(null, [| func; rt; arg0; arg1 |])
                     with :? System.Reflection.TargetInvocationException as exn -> raise exn.InnerException
-                enc rt result_obj
+                value_of_obj value_of_obj_cache tyenv  tyl.[3] rt result_obj
             | _ -> dontcare()
         Vfunc (2, func)
     | 5 ->
@@ -577,20 +605,17 @@ let wrap_fsharp_func (tyenv : tyenv) (decoder_cache : Dictionary<Type, value -> 
             let methods = typedefof<FSharpFunc<_, _>>.MakeGenericType(tyl.[0], tyl.[1]).GetTypeInfo().DeclaredMethods
             let invokefast_gen = Seq.find (fun (mi : MethodInfo) -> mi.Name = "InvokeFast" && mi.GetParameters().Length = 5) methods
             invokefast_gen.MakeGenericMethod(tyl.[2], tyl.[3], tyl.[4])
-        let dec0 = create_decoder tyenv decoder_cache tyl.[1]
-        let dec1 = create_decoder tyenv decoder_cache tyl.[2]
-        let dec2 = create_decoder tyenv decoder_cache tyl.[3]
-        let enc = create_encoder tyenv encoder_cache tyl.[4]
         let func rt values =
             match values with
             | [| arg0; arg1; arg2 |] ->
-                let arg0 = dec0 arg0
-                let arg1 = dec1 arg1
-                let arg2 = dec2 arg2
+                let touch = touch_create()
+                let arg0 = obj_of_value obj_of_value_cache tyenv touch tyl.[1] arg0
+                let arg1 = obj_of_value obj_of_value_cache tyenv touch tyl.[2] arg1
+                let arg2 = obj_of_value obj_of_value_cache tyenv touch tyl.[3] arg2
                 let result_obj =
                     try invokefast.Invoke(null, [| func; rt; arg0; arg1; arg2 |])
                     with :? System.Reflection.TargetInvocationException as exn -> raise exn.InnerException
-                enc rt result_obj
+                value_of_obj value_of_obj_cache tyenv  tyl.[4] rt result_obj
             | _ -> dontcare()
         Vfunc (3, func)
     | 6 ->
@@ -598,22 +623,18 @@ let wrap_fsharp_func (tyenv : tyenv) (decoder_cache : Dictionary<Type, value -> 
             let methods = typedefof<FSharpFunc<_, _>>.MakeGenericType(tyl.[0], tyl.[1]).GetTypeInfo().DeclaredMethods
             let invokefast_gen = Seq.find (fun (mi : MethodInfo) -> mi.Name = "InvokeFast" && mi.GetParameters().Length = 6) methods
             invokefast_gen.MakeGenericMethod(tyl.[2], tyl.[3], tyl.[4], tyl.[5])
-        let dec0 = create_decoder tyenv decoder_cache tyl.[1]
-        let dec1 = create_decoder tyenv decoder_cache tyl.[2]
-        let dec2 = create_decoder tyenv decoder_cache tyl.[3]
-        let dec3 = create_decoder tyenv decoder_cache tyl.[4]
-        let enc = create_encoder tyenv encoder_cache tyl.[5]
         let func rt values =
             match values with
             | [| arg0; arg1; arg2; arg3 |] ->
-                let arg0 = dec0 arg0
-                let arg1 = dec1 arg1
-                let arg2 = dec2 arg2
-                let arg3 = dec3 arg3
+                let touch = touch_create()
+                let arg0 = obj_of_value obj_of_value_cache tyenv touch tyl.[1] arg0
+                let arg1 = obj_of_value obj_of_value_cache tyenv touch tyl.[2] arg1
+                let arg2 = obj_of_value obj_of_value_cache tyenv touch tyl.[3] arg2
+                let arg3 = obj_of_value obj_of_value_cache tyenv touch tyl.[4] arg3
                 let result_obj =
                     try invokefast.Invoke(null, [| func; rt; arg0; arg1; arg2; arg3 |])
                     with :? System.Reflection.TargetInvocationException as exn -> raise exn.InnerException
-                enc rt result_obj
+                value_of_obj value_of_obj_cache tyenv  tyl.[5] rt result_obj
             | _ -> dontcare()
         Vfunc (4, func)
     | _ -> raise (NotImplementedException())

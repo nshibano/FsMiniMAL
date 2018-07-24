@@ -926,8 +926,8 @@ type Interpreter(config : config) as this =
         env <- array_ensure_capacity_exn config.maximum_array_length (new_ofs + 1) env
         env.[new_ofs] <- env.[orig_ofs]
     
-    let decoder_cache = Dictionary<Type, value -> obj>()
-    let encoder_cache = Dictionary<Type, runtime -> obj -> value>()
+    let obj_of_value_cache = Dictionary<Type, HashSet<value> -> value -> obj>()
+    let value_of_obj_cache = Dictionary<Type, runtime -> obj -> value>()
 
     do
         start Prelude.prelude
@@ -973,7 +973,7 @@ type Interpreter(config : config) as this =
         cancel()
         let ty = Types.typeexpr_of_type tyenv (Dictionary()) typeof<'T>
         tyenv <- Types.add_value tyenv name { vi_access = access.Immutable; vi_type = ty }
-        let enc = Value.create_encoder tyenv encoder_cache typeof<'T>
+        let enc = Value.value_of_obj value_of_obj_cache tyenv typeof<'T>
         let v = enc Value.dummy_runtime x
         let ofs = alloc.Add(name, Immutable)
         env <- array_ensure_capacity_exn config.maximum_array_length (ofs + 1) env
@@ -984,21 +984,16 @@ type Interpreter(config : config) as this =
         cancel()
         let ty = Types.typeexpr_of_type tyenv (Dictionary()) typeof<'T -> 'U>
         tyenv <- Types.add_value tyenv name { vi_access = access.Immutable; vi_type = ty }
-        let v = Value.wrap_fsharp_func tyenv decoder_cache encoder_cache typeof<runtime -> 'T -> 'U> f
+        let v = Value.wrap_fsharp_func tyenv obj_of_value_cache value_of_obj_cache typeof<runtime -> 'T -> 'U> f
         let ofs = alloc.Add(name, Immutable)
         env <- array_ensure_capacity_exn config.maximum_array_length (ofs + 1) env
         env.[ofs] <- v
     
-    member this.AddAbstractType(name : string, ty : Type) =
+    member this.RegisterAbstractType(name : string, ty : Type) =
         cancel()
         tyenv <- fst (Types.register_abstract_type tyenv name ty)
 
-    /// Internally calls Cancel()    
-    member this.AddFsRecordType(name : string, ty : Type) =
+    /// Internally calls Cancel()
+    member this.RegisterFsharpTypes(types : (string * Type) array) =
         cancel()
-        tyenv <- fst (Types.register_fsharp_record_type tyenv name ty)
-
-    /// Internally calls Cancel()    
-    member this.AddFsUnionType(name : string, ty : Type) =
-        cancel()
-        tyenv <- fst (Types.register_fsharp_union_type tyenv name ty)
+        tyenv <- fst (Types.register_fsharp_types tyenv types)

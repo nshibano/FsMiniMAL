@@ -132,9 +132,8 @@ type tyenv =
       exn_constructors : (string * constr_info) array
       labels :  MultiStrMap<label_info>
       values :   ImmutableDictionary<string, value_info>
-      registered_abstract_type : Dictionary<Type, type_id>
-      registered_fsrecord_types : Dictionary<Type, type_id>
-      registered_fsunion_types : Dictionary<Type, type_id> }
+      registered_abstract_types : Dictionary<Type, type_id>
+      registered_fsharp_types : Dictionary<Type, type_id> }
 
 let add_type tyenv info =
     let name = info.ti_name
@@ -209,12 +208,6 @@ let add_values tyenv (new_values : (string * value_info) seq) =
 let add_value tyenv name info =
     { tyenv with values = tyenv.values.SetItem(name, info) }
 
-let get_generic_arguments (ty : Type) =
-    let info = ty.GetTypeInfo()
-    if info.IsGenericTypeDefinition
-    then info.GenericTypeParameters 
-    else info.GenericTypeArguments
-
 let rec typeexpr_of_type (tyenv : tyenv) (bnds : Dictionary<Type, type_expr>) (ty : Type) =
     if ty = typeof<unit> then
         ty_unit
@@ -230,29 +223,25 @@ let rec typeexpr_of_type (tyenv : tyenv) (bnds : Dictionary<Type, type_expr>) (t
         ty_string
     elif ty.IsGenericParameter then
         bnds.[ty]
-    elif tyenv.registered_abstract_type.ContainsKey(ty) then
-        let id = tyenv.registered_abstract_type.[ty]
-        Tconstr (id, [])
     elif ty.IsArray then
         let ty_elem = ty.GetElementType()
         ty_array (typeexpr_of_type tyenv bnds ty_elem)
     elif FSharpType.IsTuple ty then
         let types = Array.map (typeexpr_of_type tyenv bnds) (FSharpType.GetTupleElements(ty))
         Ttuple (List.ofArray types)
-    elif FSharpType.IsUnion ty then
-        let args = 
-            if ty.GetTypeInfo().IsGenericType then
-                Array.map (typeexpr_of_type tyenv bnds) (get_generic_arguments ty) |> List.ofArray
+    elif tyenv.registered_abstract_types.ContainsKey(ty) then
+        let id = tyenv.registered_abstract_types.[ty]
+        Tconstr (id, [])
+    elif FSharpType.IsRecord ty || FSharpType.IsUnion ty then
+        let args =
+            let info = ty.GetTypeInfo()
+            if info.IsGenericTypeDefinition then
+                info.GenericTypeParameters |> Array.map (typeexpr_of_type tyenv bnds) |> List.ofArray
+            elif info.IsConstructedGenericType then
+                info.GenericTypeArguments |> Array.map (typeexpr_of_type tyenv bnds) |> List.ofArray
             else []
-        let id = tyenv.registered_fsunion_types.[(if ty.GetTypeInfo().IsGenericType then ty.GetGenericTypeDefinition() else ty)]
-        Tconstr (id, args)
-    elif FSharpType.IsRecord ty then
-        let args = 
-            if ty.GetTypeInfo().IsGenericType then
-                Array.map (typeexpr_of_type tyenv bnds) (get_generic_arguments ty) |> List.ofArray
-            else []
-        let id = tyenv.registered_fsrecord_types.[(if ty.GetTypeInfo().IsGenericType then ty.GetGenericTypeDefinition() else ty)]
-        Tconstr (id, args)                    
+        let id = tyenv.registered_fsharp_types.[(if ty.GetTypeInfo().IsGenericType then ty.GetGenericTypeDefinition() else ty)]
+        Tconstr (id, args)             
     elif FSharpType.IsFunction ty then
         let t1, t2 = FSharpType.GetFunctionElements(ty)
         Tarrow ("",(typeexpr_of_type tyenv bnds) t1, (typeexpr_of_type tyenv bnds) t2)
@@ -266,8 +255,8 @@ let register_abstract_type (tyenv : tyenv) (name : string) (ty : Type) =
 
     let tyenv =
         { tyenv with
-            registered_abstract_type =
-                let dict = Dictionary(tyenv.registered_abstract_type)
+            registered_abstract_types =
+                let dict = Dictionary(tyenv.registered_abstract_types)
                 dict.Add(ty, id)
                 dict
             types = tyenv.types.Add(name, info)
@@ -275,99 +264,106 @@ let register_abstract_type (tyenv : tyenv) (name : string) (ty : Type) =
         
     (tyenv, id)
 
-let register_fsharp_union_type tyenv name (union : Type) =
-    let id = type_id_new ()
+let register_fsharp_types tyenv (types : (string * Type) array) =
 
-    let ty_args = get_generic_arguments union |> List.ofArray
-    let mappings = List.map (fun (ty_arg : Type) ->
-        let tv = { link = None ; level = 0 }
-        (ty_arg, tv, Tvar tv)) ty_args
+    Array.iter (fun (_, ty) ->
+        if not (FSharpType.IsRecord(ty) || FSharpType.IsUnion(ty)) then dontcare()
+        if ty.IsConstructedGenericType then dontcare()) types
+    
+    let types = Array.map (fun (name, ty) -> (name, ty, type_id_new())) types
 
-    let bnds =
-        let dict = Dictionary()
-        List.iter (fun (ty, mal_tv, mal_ty) -> dict.Add(ty, mal_ty)) mappings
-        dict
-
-    let mal_vars = List.map (fun (ty, mal_tv, mal_ty) -> mal_tv) mappings
-    let mal_args = List.map (fun (ty, mal_tv, mal_ty) -> mal_ty) mappings
-
-    let cases = FSharpType.GetUnionCases(union)
-    let cases = 
-        Array.map (fun (case : UnionCaseInfo) ->
-            let name = case.Name
-            let field_types =
-                case.GetFields()
-                |> Array.map (fun (f : PropertyInfo) ->
-                    let t = f.PropertyType
-                    typeexpr_of_type tyenv bnds t)
-                |> List.ofArray
-            let tag = case.Tag
-            (name, tag, field_types)) cases
-        |> List.ofArray
-
-    let info = { ti_name = name; ti_params = mal_vars; ti_res = Tconstr (id, mal_args); ti_kind = Kvariant cases }
-
-    let tyenv =
+    let dummy_tyenv =
         { tyenv with
-            registered_fsunion_types =
-                let dict = Dictionary(tyenv.registered_fsunion_types)
-                dict.Add(union, id)
-                dict
-            types = tyenv.types.Add(name, info)
-            types_of_id = tyenv.types_of_id.Add(id, info)
-            constructors = List.fold (fun accu (name, tag, ty_args) ->
-                let info = 
-                    { ci_params = info.ti_params
-                      ci_args = ty_args
-                      ci_res = info.ti_res
-                      ci_tag = tag }                    
-                accu.Add(name, info)) tyenv.constructors cases }
-        
-    (tyenv, id)
+            registered_fsharp_types =
+                let dict = Dictionary(tyenv.registered_fsharp_types)
+                for (_, ty, id) in types do
+                    dict.Add(ty, id)
+                dict }
+    
+    let mutable tyenv = tyenv
 
-let register_fsharp_record_type tyenv name (record : Type) =
-        let id = type_id_new ()
+    for (name, ty, id) in types do
 
-        let args = get_generic_arguments record |> List.ofArray
-        let mal_vars = List.map (fun arg -> { link = None ; level = 0 }) args
-        let mal_args = List.map (fun var -> Tvar var) mal_vars
+        let ty_params = List.ofArray (if ty.IsGenericTypeDefinition then ty.GetTypeInfo().GenericTypeParameters else [||])
+        let mappings = List.map (fun (ty_arg : Type) ->
+            let tv = { link = None ; level = 0 }
+            (ty_arg, tv, Tvar tv)) ty_params
+
         let bnds =
             let dict = Dictionary()
-            List.iter2 (fun x y -> dict.Add(x, y)) args mal_args
+            List.iter (fun (ty, mal_tv, mal_ty) -> dict.Add(ty, mal_ty)) mappings
             dict
 
-        let fields = FSharpType.GetRecordFields(record)
-        let fields =
-            Array.map (fun (field : PropertyInfo) ->
-                let name = field.Name
-                let field_type = typeexpr_of_type tyenv bnds field.PropertyType
-                let access = if field.CanWrite then access.Mutable else access.Immutable
-                (name, field_type, access)) fields
-            |> List.ofArray
+        let mal_vars = List.map (fun (ty, mal_tv, mal_ty) -> mal_tv) mappings
+        let mal_args = List.map (fun (ty, mal_tv, mal_ty) -> mal_ty) mappings
 
-        let info = { ti_name = name; ti_params = mal_vars; ti_res = Tconstr (id, mal_args); ti_kind = Krecord fields }
-        let fields_count = List.length fields
+        if FSharpType.IsRecord ty then
+            let fields = FSharpType.GetRecordFields(ty)
+            let fields =
+                Array.map (fun (field : PropertyInfo) ->
+                    let name = field.Name
+                    let field_type = typeexpr_of_type dummy_tyenv bnds field.PropertyType
+                    let access = if field.CanWrite then access.Mutable else access.Immutable
+                    (name, field_type, access)) fields
+                |> List.ofArray
 
-        let tyenv =
-            { tyenv with
-                    registered_fsrecord_types =
-                        let dict = Dictionary(tyenv.registered_fsrecord_types)
-                        dict.Add(record, id)
+            let info = { ti_name = name; ti_params = mal_vars; ti_res = Tconstr (id, mal_args); ti_kind = Krecord fields }
+            let fields_count = List.length fields
+
+            tyenv <-
+                { tyenv with
+                        registered_fsharp_types =
+                            let dict = Dictionary(tyenv.registered_fsharp_types)
+                            dict.Add(ty, id)
+                            dict
+                        types = tyenv.types.Add(name, info)
+                        types_of_id = tyenv.types_of_id.Add(id, info)
+                        labels = list_foldi (fun accu i (name, ty_arg, access) ->
+                            let info =
+                                { li_id = id
+                                  li_params = info.ti_params
+                                  li_arg = ty_arg
+                                  li_res = info.ti_res
+                                  li_access = access
+                                  li_total = fields_count
+                                  li_index = i }
+                            accu.Add(name, info)  ) tyenv.labels fields }
+            
+        else // union
+            let cases = FSharpType.GetUnionCases(ty)
+            let cases = 
+                Array.map (fun (case : UnionCaseInfo) ->
+                    let name = case.Name
+                    let field_types =
+                        case.GetFields()
+                        |> Array.map (fun (f : PropertyInfo) ->
+                            let t = f.PropertyType
+                            typeexpr_of_type dummy_tyenv bnds t)
+                        |> List.ofArray
+                    let tag = case.Tag
+                    (name, tag, field_types)) cases
+                |> List.ofArray
+
+            let info = { ti_name = name; ti_params = mal_vars; ti_res = Tconstr (id, mal_args); ti_kind = Kvariant cases }
+
+            tyenv <-
+                { tyenv with
+                    registered_fsharp_types =
+                        let dict = Dictionary(tyenv.registered_fsharp_types)
+                        dict.Add(ty, id)
                         dict
                     types = tyenv.types.Add(name, info)
                     types_of_id = tyenv.types_of_id.Add(id, info)
-                    labels = list_foldi (fun accu i (name, ty_arg, access) ->
-                        let info =
-                            { li_id = id
-                              li_params = info.ti_params
-                              li_arg = ty_arg
-                              li_res = info.ti_res
-                              li_access = access
-                              li_total = fields_count
-                              li_index = i }
-                        accu.Add(name, info)  ) tyenv.labels fields }
+                    constructors = List.fold (fun accu (name, tag, ty_args) ->
+                        let info = 
+                            { ci_params = info.ti_params
+                              ci_args = ty_args
+                              ci_res = info.ti_res
+                              ci_tag = tag }                    
+                        accu.Add(name, info)) tyenv.constructors cases }
 
-        tyenv, id
+    let ids = Array.map (fun (_, _, id) -> id) types
+    tyenv, ids
 
 let tyenv_basic, id_option, id_ref, tag_exn_Failure, tag_exn_DivisionByZero, tag_exn_IndexOutOfRange, tag_exn_MatchFailure =
     let tyenv =
@@ -377,14 +373,14 @@ let tyenv_basic, id_option, id_ref, tag_exn_Failure, tag_exn_DivisionByZero, tag
           exn_constructors = [||]
           labels =  MultiStrMap.Empty
           values = ImmutableDictionary.Empty
-          registered_abstract_type = Dictionary()
-          registered_fsrecord_types = Dictionary()
-          registered_fsunion_types = Dictionary() }
+          registered_abstract_types = Dictionary()
+          registered_fsharp_types = Dictionary() }
      
     let tyenv = Array.fold add_type tyenv [| ti_int; ti_char; ti_float; ti_array; ti_bool; ti_list; ti_unit; ti_string; ti_format; ti_exn |]
 
-    let tyenv, id_option = register_fsharp_union_type tyenv "option" typedefof<option<_>>
-    let tyenv, id_ref = register_fsharp_record_type tyenv "ref" typedefof<ref<_>>
+    let tyenv, ids = register_fsharp_types tyenv [| ("ref", typedefof<ref<_>>); ("option", typedefof<option<_>>) |]
+    let id_ref = ids.[0]
+    let id_option = ids.[1]
     
     let tyenv, tag_exn_Failure = add_exn_constructor tyenv "Failure" [ty_string]
     let tyenv, tag_exn_DivisionByZero = add_exn_constructor tyenv "DivisionByZero" []

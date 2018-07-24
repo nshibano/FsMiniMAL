@@ -23,21 +23,6 @@ let setfield_func (rt : runtime) argv =
 
 let setfield = Vfunc (3, setfield_func)
 
-
-exception MALException of value // exception which user code can catch
-
-let mal_failure rt msg = block_createrange rt tag_exn_Failure [| of_string rt msg |]
-let mal_failwith rt msg = raise (MALException (mal_failure rt msg))
-
-let mal_DivisionByZero = of_int dummy_runtime tag_exn_DivisionByZero
-let mal_raise_DivisionByZero () = raise (MALException mal_DivisionByZero)
-
-let mal_IndexOutOfRange = of_int dummy_runtime tag_exn_IndexOutOfRange
-let mal_raise_IndexOutOfRange () = raise (MALException mal_IndexOutOfRange)
-
-let mal_MatchFailure = of_int dummy_runtime tag_exn_MatchFailure
-let mal_raise_MatchFailure () = raise (MALException mal_MatchFailure)
-
 let add_stdlib (tyenv : tyenv) (genv : value array) (alloc : Allocator) =
     let mutable tyenv = tyenv
     let mutable genv = genv
