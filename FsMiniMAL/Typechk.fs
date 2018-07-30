@@ -573,8 +573,13 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
             | _ -> List.init el.Length (fun _ -> None)
         Ttuple (List.map2 (expression warning_sink tyenv type_vars current_level) tyl_expected el)
     | SEarray el ->
+        let ty_item_expected =
+            match option_repr ty_expected with
+            | Some (Tconstr (type_id.ARRAY, [ty_arg])) -> Some ty_arg
+            | _ -> None
+        let tyl_items = List.map (expression warning_sink tyenv type_vars current_level ty_item_expected) el
         let ty_accu = new_tvar current_level
-        List.iter (expression_expect warning_sink tyenv type_vars current_level ty_accu) el
+        List.iter2 (fun e ty -> unify_exp tyenv e ty ty_accu) el tyl_items
         Tconstr (type_id.ARRAY, [ ty_accu ])
     | SEstring s ->
         match option_repr ty_expected with
