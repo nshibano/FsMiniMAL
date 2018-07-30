@@ -337,23 +337,28 @@ let unify_exp tyenv exp ty ty_expected =
     try unify tyenv ty ty_expected
     with Unify -> raise (Type_error (Type_mismatch (tyenv, Expression, ty, ty_expected), exp.se_loc))
 
-/// From constructor name, picks type information of variant type.
+let option_repr (ty : type_expr option) =
+    match ty with
+    | None -> None
+    | Some ty -> Some (repr ty)
+
+/// Pick the type information of variant type from constructor name.
 /// If expected type is variant type and that type have definition for the used constructor name,
-/// pick that type even if the constructor is shadowed.
-let pick_constr (tyenv : tyenv) (ty_expected : type_expr) (name : string) =
+/// pick that type even if the constructor name is shadowed.
+let pick_constr (tyenv : tyenv) (ty_expected : type_expr option) (name : string) =
     match tyenv.constructors.FindAll name with
     | [] -> None
     | constrs ->
         let ci_from_ty_expected =
-            match repr ty_expected with
-            | Tconstr (id, _) ->
+            match option_repr ty_expected with
+            | Some (Tconstr (id, _)) ->
                 List.tryFind (function { ci_res = Tconstr (id', _) } -> id = id' | _ -> false) constrs
             | _ -> None
         match ci_from_ty_expected with
         | Some _ -> ci_from_ty_expected
         | None -> Some (List.head constrs)
 
-let rec pattern tyenv (type_vars : Dictionary<string, type_expr>) (current_level : int) (ty_expected : type_expr) (pat : Syntax.pattern) =
+let rec pattern tyenv (type_vars : Dictionary<string, type_expr>) (current_level : int) (ty_expected : type_expr option) (pat : Syntax.pattern) =
     match pat.sp_desc with
     | SPid s ->
         if is_constructor s then
@@ -384,16 +389,16 @@ let rec pattern tyenv (type_vars : Dictionary<string, type_expr>) (current_level
     | SPstring _ -> ty_string, []
     | SPtuple l ->
         let tyl_expected =
-            match repr ty_expected with
-            | Ttuple tyl when l.Length = tyl.Length -> tyl
-            | _ -> List.init l.Length (fun _ -> new_tvar current_level)
+            match option_repr ty_expected with
+            | Some (Ttuple tyl) when l.Length = tyl.Length -> List.map (fun ty -> Some ty) tyl
+            | _ -> List.init l.Length (fun _ -> None)
         let tyl, bnds = pattern_list tyenv type_vars current_level pat.sp_loc tyl_expected l
         (Ttuple tyl, bnds)
     | SParray l ->
         let ty_item_expected =
-            match repr ty_expected with
-            | Tconstr (type_id.ARRAY, [ty_arg]) -> ty_arg
-            | _ -> new_tvar current_level
+            match option_repr ty_expected with
+            | Some (Tconstr (type_id.ARRAY, [ty_arg])) -> Some ty_arg
+            | _ -> None
         let tyl_expected = List.init l.Length (fun _ -> ty_item_expected)
         let tyl, bnds = pattern_list tyenv type_vars current_level pat.sp_loc tyl_expected l
         // Item expressions in array pattern must be same. So unify them.
@@ -415,9 +420,9 @@ let rec pattern tyenv (type_vars : Dictionary<string, type_expr>) (current_level
                 // This variant takes one argument. Therefore if argument is syntactically tuple,
                 // it is taking single argument in tuple type.
                 let ty_arg_expected =
-                    match repr ty_expected with
-                    | Tconstr (id, [ty_arg_expected]) when id = ty_res_id -> ty_arg_expected
-                    | _ -> new_tvar current_level
+                    match option_repr ty_expected with
+                    | Some (Tconstr (id, [ty_arg_expected])) when id = ty_res_id -> Some ty_arg_expected
+                    | _ -> None
                 let ty_pat, bnds = pattern tyenv type_vars current_level ty_arg_expected arg
                 unify_pat tyenv arg ty_pat ty_arg
                 pat.sp_desc <- SPblock (info.ci_tag, [arg])
@@ -426,10 +431,10 @@ let rec pattern tyenv (type_vars : Dictionary<string, type_expr>) (current_level
                 // This variant takes multiple argument, so the argument must be syntactically tuple.
                 if args.Length = ty_args.Length then
                     let ty_args_expected =
-                        match repr ty_expected with
-                        | Tconstr (id, ty_args_expected) when id = ty_res_id && ty_args.Length = ty_args_expected.Length ->
-                            ty_args_expected
-                        | _ -> List.init ty_args.Length (fun _ -> new_tvar current_level)
+                        match option_repr ty_expected with
+                        | Some (Tconstr (id, ty_args_expected)) when id = ty_res_id && ty_args.Length = ty_args_expected.Length ->
+                            List.map (fun ty -> Some ty) ty_args_expected
+                        | _ -> List.init ty_args.Length (fun _ -> None)
                     let ty_pats, bnds = pattern_list tyenv type_vars current_level pat.sp_loc ty_args_expected args
                     do_list3 (unify_pat tyenv) args ty_pats ty_args
                     pat.sp_desc <- SPblock (info.ci_tag, args)
@@ -440,7 +445,7 @@ let rec pattern tyenv (type_vars : Dictionary<string, type_expr>) (current_level
     | SPblock _ -> dontcare()
     | SPrecord l ->
         // Try to find record type from ty_expected
-        let id_record = is_record tyenv ty_expected
+        let id_record = Option.bind (fun ty -> is_record tyenv ty) ty_expected
 
         // If record type is still unknown, decide based on firstly seen record label.
         let id_record =
@@ -461,7 +466,7 @@ let rec pattern tyenv (type_vars : Dictionary<string, type_expr>) (current_level
                 | None -> raise (Type_error (Label_undefined_for_type (tyenv, lab, ty_res), field_pat.sp_loc))) l
 
         // type argument expressions
-        let ty_args, bnds = pattern_list tyenv type_vars current_level pat.sp_loc (List.init l.Length (fun _ -> new_tvar current_level)) (List.map snd l)
+        let ty_args, bnds = pattern_list tyenv type_vars current_level pat.sp_loc (List.init l.Length (fun _ -> None)) (List.map snd l)
 
         // unify record field type and argument type
         do_list3 (fun (_, pat) ty_arg (_, ty_field, _) -> unify_pat tyenv pat ty_arg ty_field) l ty_args used_fields
@@ -476,7 +481,7 @@ let rec pattern tyenv (type_vars : Dictionary<string, type_expr>) (current_level
     | SPany -> (new_tvar current_level, [])
     | SPtype (pat, sty) ->
         let ty_res = type_expr tyenv false type_vars sty
-        let ty_pat, bnds = pattern tyenv type_vars current_level ty_res pat
+        let ty_pat, bnds = pattern tyenv type_vars current_level (Some ty_res) pat
         unify_pat tyenv pat ty_pat ty_res
         (ty_res, bnds)
     | SPor (a, b) ->
@@ -492,7 +497,7 @@ let rec pattern tyenv (type_vars : Dictionary<string, type_expr>) (current_level
         unify_pat tyenv b ty_b ty_a
         (ty_a, bnds_a)
 /// Type list of patterns. If there was duplicated name, throw type error.
-and pattern_list tyenv (type_vars : Dictionary<string, type_expr>) current_level loc (tyl_expected : type_expr list) (patl : Syntax.pattern list) =
+and pattern_list tyenv (type_vars : Dictionary<string, type_expr>) current_level loc (tyl_expected : type_expr option list) (patl : Syntax.pattern list) =
     let tyl, bndss = List.unzip (List.map2 (fun ty_expected pat -> pattern tyenv type_vars current_level ty_expected pat) tyl_expected patl)
     let bnds =
         List.foldBack (fun bnd bnds ->
@@ -567,11 +572,11 @@ let type_printf_cmds cmds ty_result =
         | _ -> raise PrintfFormat.InvalidFormatString
     loop cmds
 
-let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Dictionary<string, type_expr>) (current_level : int) (ty_expected : type_expr) (e : expression) =
+let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Dictionary<string, type_expr>) (current_level : int) (ty_expected : type_expr option) (e : expression) =
     match e.se_desc with
     | SEid (("+" | "-" | "*" | "/" | "~-") as op) ->
         let ty_float_result, ty_int_result = if op = "~-" then ty_ff, ty_ii else ty_fff, ty_iii
-        if same_type tyenv ty_expected ty_float_result then
+        if (match ty_expected with Some ty_expected -> same_type tyenv ty_expected ty_float_result | None -> false) then
             e.se_desc <- SEid (op + ".")
             ty_float_result
         else ty_int_result
@@ -597,17 +602,17 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
     | SEfloat _ -> ty_float
     | SEtuple el ->
         let tyl_expected =
-            match repr ty_expected with
-            | Ttuple tyl when tyl.Length = el.Length -> tyl
-            | _ -> List.init el.Length (fun _ -> new_tvar current_level)
+            match option_repr ty_expected with
+            | Some (Ttuple tyl) when tyl.Length = el.Length -> List.map (fun ty -> Some ty) tyl
+            | _ -> List.init el.Length (fun _ -> None)
         Ttuple (List.map2 (expression warning_sink tyenv type_vars current_level) tyl_expected el)
     | SEarray el ->
         let ty_accu = new_tvar current_level
         List.iter (expression_expect warning_sink tyenv type_vars current_level ty_accu) el
         Tconstr (type_id.ARRAY, [ ty_accu ])
     | SEstring s ->
-        match repr ty_expected with
-        | Tconstr (type_id.FORMAT, _) ->
+        match option_repr ty_expected with
+        | Some (Tconstr (type_id.FORMAT, _)) ->
             let cmds =
                 try PrintfFormat.parse_fmt s
                 with PrintfFormat.InvalidFormatString -> raise (Type_error (Invalid_printf_format, e.se_loc))
@@ -634,7 +639,10 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
         let id_record =
             match id_record with
             | Some _ -> id_record
-            | None -> is_record tyenv ty_expected
+            | None ->
+                match ty_expected with
+                | Some ty_expected -> is_record tyenv ty_expected
+                | None -> None
 
         // if there is duplicate in labels, report type error
         all_differ e.se_loc kind.Label kind.Record_expression (List.map fst fields)
@@ -710,12 +718,12 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
                 ty_float, ty_int
             else // = 1
                 ty_ff, ty_ii
-        if same_type tyenv ty_expected ty_float_res then
+        if (match ty_expected with Some ty_expected -> same_type tyenv ty_expected ty_float_res | None -> false) then
             List.iter (expression_expect warning_sink tyenv type_vars current_level ty_float) el_args
             e_op.se_desc <- SEid (op + ".")            
             ty_float_res
         else
-            let tyl_args = List.map (fun e -> expression warning_sink tyenv type_vars current_level (new_tvar current_level) e) el_args
+            let tyl_args = List.map (fun e -> expression warning_sink tyenv type_vars current_level None e) el_args
             let mutable float_count = 0
             let mutable tvar_count = 0
             for ty in tyl_args do
@@ -731,7 +739,7 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
                 List.iter2 (fun e_arg ty_arg -> unify_exp tyenv e_arg ty_arg ty_int) el_args tyl_args
                 ty_int_res
     | SEapply ({ se_desc = SEid ".[]"}, [e_arg0; e_arg1]) ->
-        let ty_arg0 = expression warning_sink tyenv type_vars current_level (new_tvar current_level) e_arg0
+        let ty_arg0 = expression warning_sink tyenv type_vars current_level None e_arg0
         let ty_result =
             if same_type tyenv ty_arg0 ty_string then
                 ty_char
@@ -742,11 +750,11 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
                 ty_item
         expression_expect warning_sink tyenv type_vars current_level ty_int e_arg1
         ty_result
-    | SEapply ({ se_desc = SEid "^" } as e0, [e1; e2]) when same_type tyenv ty_string (expression warning_sink tyenv type_vars current_level (new_tvar current_level) e1) && same_type tyenv ty_string (expression warning_sink tyenv type_vars current_level (new_tvar current_level) e2) ->
+    | SEapply ({ se_desc = SEid "^" } as e0, [e1; e2]) when same_type tyenv ty_string (expression warning_sink tyenv type_vars current_level None e1) && same_type tyenv ty_string (expression warning_sink tyenv type_vars current_level None e2) ->
             e0.se_desc <- SEid "^^"
             ty_string
     | SEapply (e1, el) ->
-        let ty1 = expression warning_sink tyenv type_vars current_level (new_tvar current_level) e1
+        let ty1 = expression warning_sink tyenv type_vars current_level None e1
         try filter_arrow tyenv current_level ty1 |> ignore
         with Unify -> raise (Type_error (This_expression_is_not_a_function, e1.se_loc))
         let ty_args, ty_res =
@@ -755,13 +763,13 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
         List.iter2 (fun ty e -> expression_expect warning_sink tyenv type_vars current_level ty e) ty_args el
         ty_res
     | SEfn (patl, e1) ->
-        let ty_args_expected, ty_result_expected = split_last (try_filter_arrow_n tyenv current_level (patl.Length) ty_expected)
+        //let ty_args_expected, ty_result_expected = split_last (try_filter_arrow_n tyenv current_level (patl.Length) ty_expected)
         let loc_patl = { (List.head patl).sp_loc with ed = (list_last patl).sp_loc.ed }
-        let ty_args, new_bnds = pattern_list tyenv type_vars current_level loc_patl ty_args_expected patl
-        List.iter2 (fun ty ty_expected -> try unify tyenv ty ty_expected with Unify -> ()) ty_args ty_args_expected
+        let ty_args, new_bnds = pattern_list tyenv type_vars current_level loc_patl (List.init patl.Length (fun _ -> None)) patl
+        //List.iter2 (fun ty ty_expected -> try unify tyenv ty ty_expected with Unify -> ()) ty_args ty_args_expected
         let names = List.map get_pattern_name patl
         let tyenv = add_values tyenv new_bnds
-        let ty_res = expression warning_sink tyenv type_vars current_level ty_result_expected e1
+        let ty_res = expression warning_sink tyenv type_vars current_level None e1
         List.foldBack2 (fun name ty1 ty2 -> Tarrow (name, ty1, ty2)) names ty_args ty_res
     | SEbegin cl ->
         if cl.Length = 0 then ty_unit
@@ -780,10 +788,10 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
                     Types.add_values tyenv new_bnds) tyenv cl |> ignore
                 ty_unit
     | SEcase (e, cases) ->
-        let ty_arg = expression warning_sink tyenv type_vars current_level (new_tvar current_level) e
+        let ty_arg = expression warning_sink tyenv type_vars current_level None e
         let ty_res = new_tvar current_level
         List.iter (fun (pat, ew, e) ->
-            let ty_pat, new_values = pattern tyenv type_vars current_level ty_arg pat
+            let ty_pat, new_values = pattern tyenv type_vars current_level (Some ty_arg) pat
             unify_pat tyenv pat ty_pat ty_arg
             let tyenv = add_values tyenv new_values
             Option.iter (fun ew -> expression_expect warning_sink tyenv type_vars current_level ty_bool ew) ew
@@ -791,9 +799,9 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
         ty_res
     | SEtry (e, cases) ->
         if not (List.forall (function (_, None, _) -> true | (_, Some _, _) -> false) cases) then raise (Type_error (Cannot_use_when_clause_in_try_construct, e.se_loc))
-        let ty_arg = expression warning_sink tyenv type_vars current_level (new_tvar current_level) e
+        let ty_arg = expression warning_sink tyenv type_vars current_level None e
         List.iter (fun (pat, _, e) ->
-            let ty_pat, new_values = pattern tyenv type_vars current_level (new_tvar current_level) pat
+            let ty_pat, new_values = pattern tyenv type_vars current_level None pat
             unify_pat tyenv pat ty_pat ty_exn
             let tyenv = add_values tyenv new_values
             expression_expect warning_sink tyenv type_vars current_level ty_arg e) cases
@@ -802,7 +810,7 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
         expression_expect warning_sink tyenv type_vars current_level ty_bool e1
         match e3 with
         | Some e3 ->
-            let ty_res = expression warning_sink tyenv type_vars current_level (new_tvar current_level) e2
+            let ty_res = expression warning_sink tyenv type_vars current_level None e2
             expression_expect warning_sink tyenv type_vars current_level ty_res e3
             ty_res
         | None ->
@@ -817,7 +825,7 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
             expression_expect warning_sink tyenv type_vars current_level info.vi_type e1;
             Ttuple []
     | SEgetfield (e1, s) ->
-        let ty1 = expression warning_sink tyenv type_vars current_level (new_tvar current_level) e1
+        let ty1 = expression warning_sink tyenv type_vars current_level None e1
         let candidates = tyenv.labels.FindAll s
         let info_from_ty1 =
             match repr ty1 with
@@ -833,7 +841,7 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
         e.se_desc <- SEugetfield (e1, info.li_index)
         ty_field
     | SEsetfield (e1, s, e2) ->
-        let ty1 = expression warning_sink tyenv type_vars current_level (new_tvar current_level) e1
+        let ty1 = expression warning_sink tyenv type_vars current_level None e1
         let candidates = tyenv.labels.FindAll s
         let info_from_ty1 =
             match repr ty1 with
@@ -872,11 +880,11 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
 /// Returns unit and the result remains in ty_expected.
 /// Throws type error if failed.
 and expression_expect (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Dictionary<string, type_expr>) current_level ty_expected e =
-    let ty = expression warning_sink tyenv type_vars current_level ty_expected e
+    let ty = expression warning_sink tyenv type_vars current_level (Some ty_expected) e
     unify_exp tyenv e ty ty_expected
 
 and statement tyenv warning_sink type_vars current_level e =
-    let ty = expression warning_sink tyenv type_vars current_level (new_tvar current_level) e
+    let ty = expression warning_sink tyenv type_vars current_level None e
     match repr ty with
     | Tarrow _ ->
         warning_sink (Partially_applied, e.se_loc)
@@ -889,7 +897,7 @@ and command tyenv warning_sink (type_vars : Dictionary<string, type_expr>) curre
         statement tyenv warning_sink type_vars current_level e |> ignore
         []
     | SCval l ->
-        let ty_patl, new_bnds = pattern_list tyenv type_vars (current_level + 1) cmd.sc_loc (List.init l.Length (fun _ -> new_tvar current_level)) (List.map fst l)
+        let ty_patl, new_bnds = pattern_list tyenv type_vars (current_level + 1) cmd.sc_loc (List.init l.Length (fun _ -> None)) (List.map fst l)
         let l = List.map2 (fun (_, e) ty_pat -> (ty_pat, e)) l ty_patl
         List.iter (fun (ty_pat, e) -> expression_expect warning_sink tyenv type_vars (current_level + 1) ty_pat e) l
         List.iter (fun (ty_pat, e) ->
@@ -908,7 +916,7 @@ and command tyenv warning_sink (type_vars : Dictionary<string, type_expr>) curre
         let tyenv_with_dummy_info = add_values tyenv (List.map (fun (name, _, info) -> (name, info)) defs)
         let new_values =
             List.map (fun (name, expr, info) ->
-                let ty = expression warning_sink tyenv_with_dummy_info type_vars (current_level + 1) (new_tvar (current_level + 1)) expr
+                let ty = expression warning_sink tyenv_with_dummy_info type_vars (current_level + 1) None expr
                 unify_exp tyenv_with_dummy_info expr ty info.vi_type
                 let info = { vi_type = ty; vi_access = access.Immutable; }
                 name, info) defs
@@ -920,14 +928,14 @@ and command tyenv warning_sink (type_vars : Dictionary<string, type_expr>) curre
         all_differ cmd.sc_loc kind.Variable_name kind.Variable_definition names
 
         List.map (fun (s, e) ->
-            (s, { vi_type = expression warning_sink tyenv type_vars current_level (new_tvar current_level) e; vi_access = access.Mutable })) l
+            (s, { vi_type = expression warning_sink tyenv type_vars current_level None e; vi_access = access.Mutable })) l
     | SCtype _
     | SChide _
     | SChideval _
     | SCexn _ -> raise (Type_error (Cannot_use_this_command_inside_an_expression, cmd.sc_loc))
 
 let type_expression warning_sink tyenv (e : Syntax.expression) =
-    let ty = expression warning_sink tyenv (Dictionary<string, type_expr>()) 1 (new_tvar 1) e
+    let ty = expression warning_sink tyenv (Dictionary<string, type_expr>()) 1 None e
     if is_nonexpansive e then generalize 0 ty
     ty
 
