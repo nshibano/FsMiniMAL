@@ -342,8 +342,6 @@ let main argv =
     case """ "foo" ^ "bar" """ "\"foobar\""
     case """ "foo" ^^ "bar" """ "\"foobar\""
 
-    case "fun array_map2 a f = array_map f a; array_map2 [| 0.0 |] (fn x -> x + x)" "[|0.0|]" // allow this without type annotation for x
-
     case "kprintf (fn s -> 3); ()" "()"
 
     topcase "fun f x = (x : 'a); f 0; f 0.0" "0.0"
@@ -373,8 +371,6 @@ let main argv =
 
     case "fun f x : float = x + x; f 1.0" "2.0"
     case "fun f (x : float) = x + x; f 1.0" "2.0"
-    case "val f = ((fn x -> x + x) : float -> 'a); f 1.0" "2.0"
-    case "val f = ((fn x -> x + x) : 'a -> float); f 1.0" "2.0"
 
     let fsharp_interop () =
         try
