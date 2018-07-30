@@ -423,30 +423,32 @@ let rec pattern tyenv (type_vars : Dictionary<string, type_expr>) (current_level
             match id_record with
             | Some id -> id
             | None ->
-                let first_lab = fst (List.head l)
+                let first_lab, _ = List.head l
                 match tyenv.labels.TryFind first_lab with
                 | Some info -> info.li_id
                 | None -> raise (Type_error (Label_undefined first_lab, pat.sp_loc))
         
         let fields, ty_res = instanciate_record tyenv current_level id_record
 
-        let used_fields =
-            List.map (fun (lab, field_pat) ->
+        let fields =
+            List.map (fun (lab, p) ->
                 match tryAssoc lab fields with
-                | Some field -> field
-                | None -> raise (Type_error (Label_undefined_for_type (tyenv, lab, ty_res), field_pat.sp_loc))) l
-
+                | Some (idx, ty, access) -> (lab, p, idx, ty, access)
+                | None -> raise (Type_error (Label_undefined_for_type (tyenv, lab, ty_res), p.sp_loc))) l
+        
         // type argument expressions
-        let ty_args, bnds = pattern_list tyenv type_vars current_level pat.sp_loc (List.init l.Length (fun _ -> None)) (List.map snd l)
+        let pl = List.map (fun (_, pat, _, _, _) -> pat) fields
+        let tyl_hint = List.map (fun (_, _, _, ty, _) -> Some ty) fields
+        let ty_args, bnds = pattern_list tyenv type_vars current_level pat.sp_loc tyl_hint pl
 
         // unify record field type and argument type
-        do_list3 (fun (_, pat) ty_arg (_, ty_field, _) -> unify_pat tyenv pat ty_arg ty_field) l ty_args used_fields
+        List.iter2 (fun (_, pat, _, ty_field, _) ty_arg -> unify_pat tyenv pat ty_arg ty_field) fields ty_args
 
         let record_len = match tyenv.types_of_id.[id_record].ti_kind with | Krecord l -> List.length l | _ -> dontcare ()
 
         // translate record to untyped block pattern
         let ary = Array.create record_len { sp_desc = SPany; sp_loc = pat.sp_loc }
-        List.iter2 (fun (_, pat) (i, _, _) -> ary.[i] <- pat) l used_fields
+        List.iter (fun (_, pat, i, _, _) -> ary.[i] <- pat) fields
         pat.sp_desc <- SPblock (0, List.ofArray ary)
         (ty_res, bnds)
     | SPany -> (new_tvar current_level, [])
