@@ -443,7 +443,7 @@ type Interpreter(config : config) as this =
         
         if state = State.Sleeping then state <- State.Running
         rt.timestamp_at_start <- Stopwatch.GetTimestamp()
-
+        
         while state = State.Running && (Stopwatch.GetTimestamp() - rt.timestamp_at_start) < slice_ticks do
             let code = stack.[stack_topidx].code
             let frame = stack.[stack_topidx].frame
@@ -929,6 +929,12 @@ type Interpreter(config : config) as this =
     let obj_of_value_cache = Dictionary<Type, HashSet<value> -> value -> obj>()
     let value_of_obj_cache = Dictionary<Type, runtime -> obj -> value>()
 
+    let set (name : string) (value : value) (ty : type_expr) =
+        tyenv <- Types.add_value tyenv name { vi_access = access.Immutable; vi_type = ty }
+        let ofs = alloc.Add(name, Immutable)
+        env <- array_ensure_capacity_exn config.maximum_array_length (ofs + 1) env
+        env.[ofs] <- value
+
     do
         start Prelude.prelude
         run Int64.MaxValue
@@ -940,7 +946,7 @@ type Interpreter(config : config) as this =
     new() = Interpreter(config.Default)
 
     member this.State with get() = state
-    member this.Run(slice) = run slice
+    member this.Run(ticks : int64) = run ticks
     member this.Accu = accu
     member this.Error = error
     member this.Wakeup = wakeup
@@ -964,36 +970,46 @@ type Interpreter(config : config) as this =
     member this.Start(s) = start s
 
     /// Internally calls Cancel()    
+    member this.StartApply(values : value array) =
+        cancel()
+        let code = UEapply (Array.map (fun v -> UEconst v) values)
+        start_code code
+        state <- State.Running
+
+    /// Internally calls Cancel()    
     member this.Do(s) =
         start s
         run Int64.MaxValue
 
+    /// Internally calls Cancel()        
+    member this.Set(name : string, value : value, ty : type_expr) =
+        cancel()
+        set name value ty
+
     /// Internally calls Cancel()    
     member this.Val<'T>(name : string, x : 'T) =
         cancel()
+        let v = Value.value_of_obj value_of_obj_cache tyenv typeof<'T> Value.dummy_runtime x
         let ty = Types.typeexpr_of_type tyenv (Dictionary()) typeof<'T>
-        tyenv <- Types.add_value tyenv name { vi_access = access.Immutable; vi_type = ty }
-        let enc = Value.value_of_obj value_of_obj_cache tyenv typeof<'T>
-        let v = enc Value.dummy_runtime x
-        let ofs = alloc.Add(name, Immutable)
-        env <- array_ensure_capacity_exn config.maximum_array_length (ofs + 1) env
-        env.[ofs] <- v
+        set name v ty
     
     /// Internally calls Cancel()    
     member this.Fun<'T, 'U>(name : string, f : runtime -> 'T -> 'U) =
         cancel()
-        let ty = Types.typeexpr_of_type tyenv (Dictionary()) typeof<'T -> 'U>
-        tyenv <- Types.add_value tyenv name { vi_access = access.Immutable; vi_type = ty }
         let v = Value.wrap_fsharp_func tyenv obj_of_value_cache value_of_obj_cache typeof<runtime -> 'T -> 'U> f
-        let ofs = alloc.Add(name, Immutable)
-        env <- array_ensure_capacity_exn config.maximum_array_length (ofs + 1) env
-        env.[ofs] <- v
-    
+        let ty = Types.typeexpr_of_type tyenv (Dictionary()) typeof<'T -> 'U>
+        set name v ty
+
+    /// Internally calls Cancel()    
     member this.RegisterAbstractType(name : string, ty : Type) =
         cancel()
-        tyenv <- fst (Types.register_abstract_type tyenv name ty)
+        let tyenv', id = Types.register_abstract_type tyenv name ty
+        tyenv <- tyenv'
+        id
 
     /// Internally calls Cancel()
     member this.RegisterFsharpTypes(types : (string * Type) array) =
         cancel()
-        tyenv <- fst (Types.register_fsharp_types tyenv types)
+        let tyenv', id = Types.register_fsharp_types tyenv types
+        tyenv <- tyenv'
+        id

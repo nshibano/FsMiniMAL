@@ -73,6 +73,11 @@ let char_for_hex4_code (lexbuf : LexBuffer<char>) =
     Char.ConvertFromUtf32(code).[0]
 
 let mark_as_comments (lexbuf : LexBuffer<char>) (st : Position) (ed : Position) =
-    match lexbuf.BufferLocalStore.TryGetValue("comments") with
-    | true, (:? List<Position * Position> as accu) -> accu.Add(st, ed)
-    | _ -> ()
+    let accu =
+        match lexbuf.BufferLocalStore.TryGetValue("comments") with
+        | true, x -> x :?> List<Position * Position>
+        | false, _ ->
+            let accu = List<Position * Position>()
+            lexbuf.BufferLocalStore.["comments"] <- accu
+            accu
+    accu.Add(st, ed)
