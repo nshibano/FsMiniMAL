@@ -545,19 +545,20 @@ let type_printf_cmds cmds ty_result =
 
 let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Dictionary<string, type_expr>) (current_level : int) (ty_expected : type_expr option) (e : expression) =
     match e.se_desc with
-    | SEid s when is_constructor s ->
-        match tyenv.constructors.TryFind(s) with
-        | Some info ->
-            if not (List.isEmpty info.ci_args) then
-                raise (Type_error(Constructor_requires_argument s, e.se_loc))
-            let _, ty_res = instanciate_constr current_level info
-            e.se_desc <- SEconstr (info.ci_tag, [])
-            ty_res
-        | None -> raise (Type_error (Constructor_undefined s, e.se_loc))
     | SEid s ->
-        match tyenv.values.TryGetValue s with
-        | true, info -> instanciate_scheme current_level info.vi_type
-        | false, _ -> raise (Type_error (Unbound_identifier s, e.se_loc))
+        if is_constructor s then
+            match tyenv.constructors.TryFind(s) with
+            | Some info ->
+                if not (List.isEmpty info.ci_args) then
+                    raise (Type_error(Constructor_requires_argument s, e.se_loc))
+                let _, ty_res = instanciate_constr current_level info
+                e.se_desc <- SEconstr (info.ci_tag, [])
+                ty_res
+            | None -> raise (Type_error (Constructor_undefined s, e.se_loc))
+        else
+            match tyenv.values.TryGetValue s with
+            | true, info -> instanciate_scheme current_level info.vi_type
+            | false, _ -> raise (Type_error (Unbound_identifier s, e.se_loc))
     | SEconstr _ -> dontcare()
     | SEint s ->
         try int s |> ignore
