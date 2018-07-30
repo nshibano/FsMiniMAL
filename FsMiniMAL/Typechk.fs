@@ -73,7 +73,7 @@ let rec all_differ loc kind definition_kind names =
         else set.Add name |> ignore
 
 let generic_level = -1
-let global_level = 1
+let global_level = 1 // The level assigned for type var which was implicitly introduced in expressions (SEtype syntax) or petters (SPtype syntax).
 
 let new_tvar level = Tvar { link = None; level = level; }
 
