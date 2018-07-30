@@ -375,7 +375,7 @@ let main argv =
     let fsharp_interop () =
         try
             let mal = Interpreter()
-            mal.RegisterFsharpTypes([|("foobar", typedefof<foobar<_>>); ("hogefuga", typedefof<hogefuga<_>>)|])
+            mal.RegisterFsharpTypes([|("foobar", typedefof<foobar<_>>); ("hogefuga", typedefof<hogefuga<_>>)|]) |> ignore
             mal.Fun("foobar_roundtrip", (fun rt (x : foobar<int>) -> x))
             let getResult() =
                 let value, ty = mal.Result

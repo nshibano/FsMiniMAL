@@ -763,10 +763,8 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
         List.iter2 (fun ty e -> expression_expect warning_sink tyenv type_vars current_level ty e) ty_args el
         ty_res
     | SEfn (patl, e1) ->
-        //let ty_args_expected, ty_result_expected = split_last (try_filter_arrow_n tyenv current_level (patl.Length) ty_expected)
         let loc_patl = { (List.head patl).sp_loc with ed = (list_last patl).sp_loc.ed }
         let ty_args, new_bnds = pattern_list tyenv type_vars current_level loc_patl (List.init patl.Length (fun _ -> None)) patl
-        //List.iter2 (fun ty ty_expected -> try unify tyenv ty ty_expected with Unify -> ()) ty_args ty_args_expected
         let names = List.map get_pattern_name patl
         let tyenv = add_values tyenv new_bnds
         let ty_res = expression warning_sink tyenv type_vars current_level None e1
@@ -876,8 +874,8 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
         ty
     | SEformat _ -> dontcare()
 
-/// Infer the type of expression with expectation. The expectation is used as hint.
-/// Returns unit and the result remains in ty_expected.
+/// Infer the type of expression with expectation. The expectation is used as a hint.
+/// Returns unit and the result remains in the ty_expected.
 /// Throws type error if failed.
 and expression_expect (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Dictionary<string, type_expr>) current_level ty_expected e =
     let ty = expression warning_sink tyenv type_vars current_level (Some ty_expected) e
