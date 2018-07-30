@@ -145,17 +145,19 @@ let is_tvar (ty : type_expr) =
     | Tvar _ -> true
     | _ -> false
 
-let rec is_record (tyenv : tyenv) (ty : type_expr) =
-    match repr ty with
-    | Tconstr (id, _) ->
+let option_repr (ty : type_expr option) =
+    match ty with
+    | None -> None
+    | Some ty -> Some (repr ty)
+
+let rec is_record (tyenv : tyenv) (some_ty : type_expr option) =
+    match option_repr some_ty with
+    | Some (Tconstr (id, _) as ty) ->
         match tyenv.types_of_id.TryFind(id) with
         | Some ti ->
             match ti.ti_kind with
             | Krecord _ -> Some id
-            | Kabbrev _ ->
-                match expand tyenv ty with
-                | Some ty -> is_record tyenv ty
-                | _ -> dontcare()
+            | Kabbrev _ -> is_record tyenv (expand tyenv ty)
             | _ -> None
         | _ -> dontcare()
     | _ -> None
@@ -337,11 +339,6 @@ let unify_exp tyenv exp ty ty_expected =
     try unify tyenv ty ty_expected
     with Unify -> raise (Type_error (Type_mismatch (tyenv, Expression, ty, ty_expected), exp.se_loc))
 
-let option_repr (ty : type_expr option) =
-    match ty with
-    | None -> None
-    | Some ty -> Some (repr ty)
-
 /// Pick the type information of variant type from constructor name.
 /// If expected type is variant type and that type have definition for the used constructor name,
 /// pick that type even if the constructor name is shadowed.
@@ -445,7 +442,7 @@ let rec pattern tyenv (type_vars : Dictionary<string, type_expr>) (current_level
     | SPblock _ -> dontcare()
     | SPrecord l ->
         // Try to find record type from ty_expected
-        let id_record = Option.bind (fun ty -> is_record tyenv ty) ty_expected
+        let id_record = is_record tyenv ty_expected
 
         // If record type is still unknown, decide based on firstly seen record label.
         let id_record =
@@ -628,21 +625,18 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
             Option.bind (fun e ->
                 let ty = expression warning_sink tyenv type_vars current_level ty_expected e
                 // if orig is available but is neither of record nor tvar, report type error
-                if not ((is_record tyenv ty).IsSome || is_tvar ty) then
+                if not ((is_record tyenv (Some ty)).IsSome || is_tvar ty) then
                     raise (Type_error (This_expression_is_not_a_record, e.se_loc))
                 Some ty) orig
         
         // get record type id from orig if possible 
-        let id_record = Option.bind (is_record tyenv) ty_orig
+        let id_record = is_record tyenv ty_orig
 
         // if record type id is still not found, and recoed type is given in ty_expected, use it.   
         let id_record =
             match id_record with
             | Some _ -> id_record
-            | None ->
-                match ty_expected with
-                | Some ty_expected -> is_record tyenv ty_expected
-                | None -> None
+            | None -> is_record tyenv ty_expected
 
         // if there is duplicate in labels, report type error
         all_differ e.se_loc kind.Label kind.Record_expression (List.map fst fields)
