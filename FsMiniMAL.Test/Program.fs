@@ -305,7 +305,8 @@ let main argv =
     type_error "type foo == foo list"
     type_error "type foo == bar and bar == foo"
     type_error "type foo == bar and bar == foo list"
-    type_error "type 'a foo == foo foo"
+    type_error "type 'a foo == int foo"
+    type_error "type 'a foo == foo list"
 
     case "val i = 0; case (1, 2) of (i, 3) -> 4 | _ -> i" "0"
 
