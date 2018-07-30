@@ -349,9 +349,7 @@ let main argv =
 
     case "begin end" "()"
 
-    case "fun f x : float = x + x; f 1.0" "2.0"
     case "(( + ) 1.0) 1.0" "2.0"
-    case "(( + ) : float -> float -> float) 1.0 1.0" "2.0"
 
     case "fun f x = 2.0 * x * x; f 3.0" "18.0"
 
@@ -369,7 +367,6 @@ let main argv =
     topcase "type foo1 = { foo : int }; type foo2 = { foo : int }; (fn ({ foo = n } : foo1) -> n); ()" "()"
     type_error "fun p i = 10e-3 * i * i; p 0"
 
-    case "fun f x : float = x + x; f 1.0" "2.0"
     case "fun f (x : float) = x + x; f 1.0" "2.0"
 
     let fsharp_interop () =

@@ -114,32 +114,6 @@ let filter_arrow_n tyenv current_level n ty =
             ty1 :: (loop (n - 1) ty2)
     loop n ty
 
-/// If ty is formed as 'a -> 'b ... -> 'result with arity n, returns [ 'a; 'b; ...; 'result ].
-/// If not, fill the list with newly created tvars.
-let try_filter_arrow_n tyenv current_level n ty =
-    let accu = new ResizeArray<type_expr>()
-    let rec loop n ty =
-        if n = 0 then
-            accu.Add(ty)
-        else
-            match repr ty with
-            | Tarrow (_, ty1, ty2) ->
-                accu.Add(ty1)
-                loop (n - 1) ty2
-            | Tconstr _ ->
-                match expand tyenv ty with
-                | Some ty ->
-                    match repr ty with
-                    | Tarrow (_, ty1, ty2) ->
-                        accu.Add(ty1)
-                        loop (n - 1) ty2
-                    | _ -> ()
-                | None -> ()
-            | _ -> ()
-    loop n ty
-    while accu.Count < n + 1 do accu.Add(new_tvar current_level)
-    List.ofSeq accu
-
 let is_tvar (ty : type_expr) =
     match repr ty with
     | Tvar _ -> true
@@ -571,12 +545,6 @@ let type_printf_cmds cmds ty_result =
 
 let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Dictionary<string, type_expr>) (current_level : int) (ty_expected : type_expr option) (e : expression) =
     match e.se_desc with
-    | SEid (("+" | "-" | "*" | "/" | "~-") as op) ->
-        let ty_float_result, ty_int_result = if op = "~-" then ty_ff, ty_ii else ty_fff, ty_iii
-        if (match ty_expected with Some ty_expected -> same_type tyenv ty_expected ty_float_result | None -> false) then
-            e.se_desc <- SEid (op + ".")
-            ty_float_result
-        else ty_int_result
     | SEid s when is_constructor s ->
         match tyenv.constructors.TryFind(s) with
         | Some info ->
@@ -712,26 +680,21 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
                 ty_float, ty_int
             else // = 1
                 ty_ff, ty_ii
-        if (match ty_expected with Some ty_expected -> same_type tyenv ty_expected ty_float_res | None -> false) then
+        let tyl_args = List.map (fun e -> expression warning_sink tyenv type_vars current_level None e) el_args
+        let mutable float_count = 0
+        let mutable tvar_count = 0
+        for ty in tyl_args do
+            if same_type tyenv ty ty_float then
+                float_count <- float_count + 1
+            elif is_tvar ty then
+                tvar_count <- tvar_count + 1
+        if float_count > 0 && (float_count + tvar_count) = tyl_args.Length then
             List.iter (expression_expect warning_sink tyenv type_vars current_level ty_float) el_args
-            e_op.se_desc <- SEid (op + ".")            
+            e_op.se_desc <- SEid (op + ".")
             ty_float_res
         else
-            let tyl_args = List.map (fun e -> expression warning_sink tyenv type_vars current_level None e) el_args
-            let mutable float_count = 0
-            let mutable tvar_count = 0
-            for ty in tyl_args do
-                if same_type tyenv ty ty_float then
-                    float_count <- float_count + 1
-                elif is_tvar ty then
-                    tvar_count <- tvar_count + 1
-            if float_count > 0 && (float_count + tvar_count) = tyl_args.Length then
-                List.iter (expression_expect warning_sink tyenv type_vars current_level ty_float) el_args
-                e_op.se_desc <- SEid (op + ".")
-                ty_float_res
-            else
-                List.iter2 (fun e_arg ty_arg -> unify_exp tyenv e_arg ty_arg ty_int) el_args tyl_args
-                ty_int_res
+            List.iter2 (fun e_arg ty_arg -> unify_exp tyenv e_arg ty_arg ty_int) el_args tyl_args
+            ty_int_res
     | SEapply ({ se_desc = SEid ".[]"}, [e_arg0; e_arg1]) ->
         let ty_arg0 = expression warning_sink tyenv type_vars current_level None e_arg0
         let ty_result =
