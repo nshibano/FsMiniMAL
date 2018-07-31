@@ -73,7 +73,6 @@ let rec all_differ loc kind definition_kind names =
         else set.Add name |> ignore
 
 let generic_level = -1
-let global_level = 1 // The level assigned for type var which was implicitly introduced in expressions (SEtype syntax) or petters (SPtype syntax).
 
 let new_tvar level = Tvar { link = None; level = level; }
 
@@ -138,25 +137,26 @@ let rec is_record (tyenv : tyenv) (some_ty : type_expr option) =
 
 /// Creates Types.type_expr from Syntax.type_expr.
 /// When unknown type var was found in Syntax.type_expr, throws error or assign new type var depending on is_typedef.
-let rec type_expr tyenv is_typedef (type_vars : Dictionary<string, type_expr>) sty =
+let rec type_expr tyenv (level_for_new_tvar : int option) (type_vars : Dictionary<string, type_expr>) sty =
     match sty.st_desc with
     | STvar s ->
         match type_vars.TryGetValue s with
         | true, ty -> ty
         | false, _ ->
-            if is_typedef then
-                raise (Type_error (Unbound_type_variable s, sty.st_loc))
-            let ty = new_tvar global_level
-            type_vars.Add(s, ty)
-            ty
-    | STarrow (st1, st2) -> Tarrow ("", (type_expr tyenv is_typedef type_vars st1), (type_expr tyenv is_typedef type_vars st2))
-    | STtuple stl -> Ttuple (List.map (type_expr tyenv is_typedef type_vars) stl)
+            match level_for_new_tvar with
+            | None -> raise (Type_error (Unbound_type_variable s, sty.st_loc))
+            | Some level ->
+                let ty = new_tvar level
+                type_vars.Add(s, ty)
+                ty
+    | STarrow (st1, st2) -> Tarrow ("", (type_expr tyenv level_for_new_tvar type_vars st1), (type_expr tyenv level_for_new_tvar type_vars st2))
+    | STtuple stl -> Ttuple (List.map (type_expr tyenv level_for_new_tvar type_vars) stl)
     | STconstr (s, stl) ->
         match tyenv.types.TryFind s with
         | Some info ->
             if (List.length stl) <> (List.length info.ti_params) then
                 raise (Type_error ((Wrong_arity_for_type s), sty.st_loc))
-            subst (List.zip info.ti_params (List.map (type_expr tyenv is_typedef type_vars) stl)) info.ti_res
+            subst (List.zip info.ti_params (List.map (type_expr tyenv level_for_new_tvar type_vars) stl)) info.ti_res
         | None -> raise (Type_error ((Undefined_type_constructor s), sty.st_loc))
 
 /// Define new type from Syntax.typedef
@@ -245,9 +245,9 @@ let add_typedef tyenv loc dl =
             List.iter2 (fun name tv -> type_vars.Add(name, (Tvar tv))) td.sd_params ti_dummy.ti_params
             let kind = 
                 match td.sd_kind with
-                | SKabbrev sty -> Kabbrev (type_expr tyenv_with_dummy_defs true type_vars sty)
-                | SKvariant cl -> Kvariant (List.mapi (fun i (s, stl) -> (s, i, (List.map (type_expr tyenv_with_dummy_defs true type_vars) stl))) cl)
-                | SKrecord fl -> Krecord (List.map (fun (s, sty, access) -> (s, (type_expr tyenv_with_dummy_defs true type_vars sty), access)) fl)
+                | SKabbrev sty -> Kabbrev (type_expr tyenv_with_dummy_defs None type_vars sty)
+                | SKvariant cl -> Kvariant (List.mapi (fun i (s, stl) -> (s, i, (List.map (type_expr tyenv_with_dummy_defs None type_vars) stl))) cl)
+                | SKrecord fl -> Krecord (List.map (fun (s, sty, access) -> (s, (type_expr tyenv_with_dummy_defs None type_vars sty), access)) fl)
             let ti = { ti_dummy with ti_kind = kind }
             (td, id, ti_dummy, ti)) dl
     
@@ -453,7 +453,7 @@ let rec pattern tyenv (type_vars : Dictionary<string, type_expr>) (current_level
         (ty_res, bnds)
     | SPany -> (new_tvar current_level, [])
     | SPtype (pat, sty) ->
-        let ty_res = type_expr tyenv false type_vars sty
+        let ty_res = type_expr tyenv (Some 1) type_vars sty
         let ty_pat, bnds = pattern tyenv type_vars current_level (Some ty_res) pat
         unify_pat tyenv pat ty_pat ty_res
         (ty_res, bnds)
@@ -834,7 +834,7 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
         statement tyenv warning_sink type_vars current_level e2 |> ignore
         Ttuple []
     | SEtype (e1, sty) ->
-        let ty = type_expr tyenv false type_vars sty
+        let ty = type_expr tyenv (Some 1) type_vars sty
         expression_expect warning_sink tyenv type_vars current_level ty e1
         ty
     | SEformat _ -> dontcare()
@@ -979,7 +979,7 @@ let type_command_list warning_sink tyenv cmds =
             else raise (Type_error ((Unbound_identifier name), cmd.sc_loc))
         | { sc_desc = SCexn (name, tyl) } ->
             if not (Char.IsUpper name.[0]) then raise (Type_error (Must_start_with_uppercase Exception_name, cmd.sc_loc))
-            let tyl = List.map (type_expr tyenv true (Dictionary<string, type_expr>())) tyl
+            let tyl = List.map (type_expr tyenv None (Dictionary<string, type_expr>())) tyl
             let tyenv', _ = add_exn_constructor tyenv name tyl
             tyenvs.Add(tyenv)
             ccmds.Add (CCexn (name, cmd.sc_loc))
