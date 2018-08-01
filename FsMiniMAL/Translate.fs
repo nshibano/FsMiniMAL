@@ -263,17 +263,17 @@ let translate_command_list (alloc : Allocator) (tyenvs : tyenv array) (ccmds : c
             tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), Some shadowed))
             tcmds.Add(UTCprint_new_values new_values)
         | CCtype (defs, loc) ->
+            tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), None))
             tcmds.Add(UTCtype(defs, loc))
-            tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), None))
         | CChide name ->
-            tcmds.Add(UTChide name)
             tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), None))
+            tcmds.Add(UTChide name)
         | CCremove name ->
             let ofs, _ = alloc.Get(name)
             tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), Some [| ofs |]))
             tcmds.Add(UTCremove name)
         | CCexn (name, loc) ->
-            tcmds.Add(UTCexn(name, loc))
             tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), None))
+            tcmds.Add(UTCexn(name, loc))
 
     alloc.EnvSize, tcmds.ToArray()
