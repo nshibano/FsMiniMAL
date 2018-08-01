@@ -66,7 +66,7 @@ let rec command (alloc : Allocator) (cmd : Syntax.command) : Value.code =
         let uel = List.map (fun (_, e) -> expression alloc e) l
         let ofsl = List.map (fun (name, _) -> alloc.Add(name, access.Mutable)) l
         UCvar(Array.ofSeq (List.zip ofsl uel))
-    | SCtype _ | SChide _ | SChideval _ | SCexn _ -> dontcare ()
+    | SCtype _ | SChide _ | SCremove _ | SCexn _ -> dontcare ()
 
 and expression (alloc : Allocator) (se : Syntax.expression) : Value.code = 
     let locals_at_start = alloc.Locals
@@ -268,10 +268,10 @@ let translate_command_list (alloc : Allocator) (tyenvs : tyenv array) (ccmds : c
         | CChide name ->
             tcmds.Add(UTChide name)
             tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), None))
-        | CChideval name ->
+        | CCremove name ->
             let ofs, _ = alloc.Get(name)
             tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), Some [| ofs |]))
-            tcmds.Add(UTChideval name)
+            tcmds.Add(UTCremove name)
         | CCexn (name, loc) ->
             tcmds.Add(UTCexn(name, loc))
             tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), None))

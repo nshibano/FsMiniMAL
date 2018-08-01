@@ -71,11 +71,11 @@ open ParseHelper
 %token FUN
 %token FUNCT
 %token HIDE
-%token HIDEVAL
 %token IF
 %token IN
 %token MUTABLE
 %token OF
+%token REMOVE
 %token THEN
 %token TO
 %token TRY
@@ -130,7 +130,7 @@ Definition :
     | VAR Var_def            { make_cmd parseState (SCvar $2) }
     | TYPE Typedef_list      { make_cmd parseState (SCtype $2) }
     | HIDE IDENT             { make_cmd parseState (SChide ($2)) }
-    | HIDEVAL IDENT          { make_cmd parseState (SChideval $2) }
+    | REMOVE IDENT          { make_cmd parseState (SCremove $2) }
     | EXCEPTION Constr1_decl { make_cmd parseState (SCexn $2) }
 
 Value_def :

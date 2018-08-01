@@ -92,7 +92,7 @@ and command_desc =
     | SCvar of (string * expression) list
     | SCtype of typedef list
     | SChide of string
-    | SChideval of string
+    | SCremove of string
     | SCexn of string * type_expr list
 
 let describe_location (loc : location) =

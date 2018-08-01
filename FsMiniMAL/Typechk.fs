@@ -516,7 +516,7 @@ and cmd_nonexpansive cmd =
     | SCval l -> List.forall (fun (_, e) -> is_nonexpansive e) l
     | SCfun _ -> true
     | SCvar l -> List.forall (fun (_, e) -> is_nonexpansive e) l
-    | SCtype _ | SChide _ | SChideval _ | SCexn _ -> dontcare()
+    | SCtype _ | SChide _ | SCremove _ | SCexn _ -> dontcare()
 
 /// Set genelic level to type vars with level > current_level.
 let rec generalize current_level ty = 
@@ -894,7 +894,7 @@ and command tyenv warning_sink (type_vars : Dictionary<string, type_expr>) curre
             (s, { vi_type = expression warning_sink tyenv type_vars current_level None e; vi_access = access.Mutable })) l
     | SCtype _
     | SChide _
-    | SChideval _
+    | SCremove _
     | SCexn _ -> raise (Type_error (Cannot_use_this_command_inside_an_expression, cmd.sc_loc))
 
 let type_expression warning_sink tyenv (e : Syntax.expression) =
@@ -951,7 +951,7 @@ type checked_command =
     | CCvar of (string * expression) list * (string * value_info) list * location
     | CCtype of typedef list * location
     | CChide of string
-    | CChideval of string
+    | CCremove of string
     | CCexn of string * location
 
 let type_command_list warning_sink tyenv cmds =
@@ -970,11 +970,11 @@ let type_command_list warning_sink tyenv cmds =
             tyenvs.Add(tyenv)
             ccmds.Add (CChide name)
             tyenv <- tyenv'
-        | { sc_desc = SChideval name } ->
+        | { sc_desc = SCremove name } ->
             if tyenv.values.ContainsKey(name) then
                 let tyenv' = { tyenv with values = tyenv.values.Remove(name) }
                 tyenvs.Add(tyenv')
-                ccmds.Add(CChideval name)
+                ccmds.Add(CCremove name)
                 tyenv <- tyenv'
             else raise (Type_error ((Unbound_identifier name), cmd.sc_loc))
         | { sc_desc = SCexn (name, tyl) } ->

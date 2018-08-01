@@ -9,11 +9,11 @@ type token =
   | TRY
   | TO
   | THEN
+  | REMOVE
   | OF
   | MUTABLE
   | IN
   | IF
-  | HIDEVAL
   | HIDE
   | FUNCT
   | FUN
@@ -78,11 +78,11 @@ type tokenId =
     | TOKEN_TRY
     | TOKEN_TO
     | TOKEN_THEN
+    | TOKEN_REMOVE
     | TOKEN_OF
     | TOKEN_MUTABLE
     | TOKEN_IN
     | TOKEN_IF
-    | TOKEN_HIDEVAL
     | TOKEN_HIDE
     | TOKEN_FUNCT
     | TOKEN_FUN

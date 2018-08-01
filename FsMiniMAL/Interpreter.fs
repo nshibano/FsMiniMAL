@@ -88,7 +88,7 @@ type Message =
     | TypeDefined of Syntax.typedef list
     | ExceptionDefined of string
     | Hide of string
-    | HideVal of string
+    | Remove of string
 
 type Error =
     | LexicalError of LexHelper.lexical_error_desc * location
@@ -183,7 +183,7 @@ type Interpreter(config : config) as this =
         | Message.TypeDefined defs -> List.iter (fun def -> rt.print_string (sprintf "Type %s defined.\r\n" def.sd_name)) defs
         | Message.ExceptionDefined name -> rt.print_string (sprintf "Exception %s is defined.\r\n" name)
         | Message.Hide name -> rt.print_string (sprintf "Type %s is now abstract.\r\n" name)
-        | Message.HideVal name -> rt.print_string (sprintf "Value %s is now hidden.\r\n" name)
+        | Message.Remove name -> rt.print_string (sprintf "Value %s has been removed.\r\n" name)
     
     let mutable message_hook = default_message_hook
 
@@ -261,7 +261,7 @@ type Interpreter(config : config) as this =
                 | _ -> dontcare()
         | UTCtype (dl, _) -> message_hook (Message.TypeDefined dl)
         | UTChide name -> message_hook (Message.Hide name)
-        | UTChideval name -> message_hook (Message.HideVal name)
+        | UTCremove name -> message_hook (Message.Remove name)
         | UTCexn (name, _) -> message_hook (Message.ExceptionDefined name)
         | UTCupd (tyenv', alloc', shadowed) ->
             tyenv <- tyenv'
