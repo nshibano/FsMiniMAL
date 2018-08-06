@@ -919,7 +919,7 @@ type Interpreter(config : config) as this =
             rt.cycles <- rt.cycles + 1L
 
     let alias_exn new_name orig_name =
-        let vi = tyenv.values.[orig_name]
+        let vi = Option.get (Types.try_get_value tyenv orig_name)
         tyenv <- Types.add_value tyenv new_name vi
         let orig_ofs, _ = alloc.Get(orig_name)
         let new_ofs = alloc.Add(new_name, Immutable)

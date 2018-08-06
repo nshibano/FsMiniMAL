@@ -131,9 +131,30 @@ type tyenv =
       constructors : MultiStrMap<constr_info>
       exn_constructors : (string * constr_info) array
       labels :  MultiStrMap<label_info>
-      values :   ImmutableDictionary<string, value_info>
+
+      // Value infos are separated into two dictionaries to make tyenv_clone faster.
+      // Keys stored in two dictionaries never overwrap.
+
+      // Values with immutable type expressions.
+      // Thus, type expressions which doesn't contain type vars or contains type vars but generic ones only.
+      values_typeexpr_immutable :   ImmutableDictionary<string, value_info>
+
+      // Values with mutable type expressions.
+      // Thus, type expressions which contains narrowable (non-generic) type vars.
+      // It is okay to set values with immutable type vars to values_typeexpr_mutable.
+      // They will be moved to values_typeexpr_immutable when scanned by tyenv_clone.
+      values_typeexpr_mutable :   ImmutableDictionary<string, value_info>
+
       registered_abstract_types : Dictionary<Type, type_id>
       registered_fsharp_types : Dictionary<Type, type_id> }
+
+let try_get_value (tyenv : tyenv) name =
+    match tyenv.values_typeexpr_immutable.TryGetValue(name) with
+    | true, info -> Some info
+    | false, _ ->
+        match tyenv.values_typeexpr_mutable.TryGetValue(name) with
+        | true, info -> Some info
+        | _ -> None
 
 let add_type tyenv info =
     let name = info.ti_name
@@ -202,13 +223,20 @@ let add_exn_constructor tyenv name args =
         constructors = tyenv.constructors.Add(name, ci)
         exn_constructors = Array.append tyenv.exn_constructors [| (name, ci) |] }, tag
 
-let add_values (tyenv : tyenv) (new_values : (string * value_info) list) =
-    let accu = tyenv.values.ToBuilder()
-    List.iter (fun (name, info) -> accu.[name] <- info) new_values
-    { tyenv with values = accu.ToImmutable() }
+let add_value (tyenv : tyenv) name info =
+    { tyenv with
+        values_typeexpr_mutable = tyenv.values_typeexpr_mutable.SetItem(name, info)
+        values_typeexpr_immutable = tyenv.values_typeexpr_immutable.Remove(name) }
 
-let add_value tyenv name info =
-    { tyenv with values = tyenv.values.SetItem(name, info) }
+let add_values (tyenv : tyenv) (new_values : (string * value_info) list) =
+    let accu_mutable = tyenv.values_typeexpr_mutable.ToBuilder()
+    let accu_immutable = tyenv.values_typeexpr_immutable.ToBuilder()
+    List.iter (fun (name, info) ->
+        accu_mutable.[name] <- info
+        accu_immutable.Remove(name) |> ignore) new_values
+    { tyenv with
+        values_typeexpr_mutable = accu_mutable.ToImmutable()
+        values_typeexpr_immutable = accu_immutable.ToImmutable() }
 
 let rec typeexpr_of_type (tyenv : tyenv) (bnds : Dictionary<Type, type_expr>) (ty : Type) =
     if ty = typeof<unit> then
@@ -374,7 +402,8 @@ let tyenv_basic, id_option, id_ref, tag_exn_Failure, tag_exn_DivisionByZero, tag
           constructors = MultiStrMap.Empty
           exn_constructors = [||]
           labels =  MultiStrMap.Empty
-          values = ImmutableDictionary.Empty
+          values_typeexpr_mutable = ImmutableDictionary.Empty
+          values_typeexpr_immutable = ImmutableDictionary.Empty
           registered_abstract_types = Dictionary()
           registered_fsharp_types = Dictionary() }
      

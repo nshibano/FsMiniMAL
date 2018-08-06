@@ -558,9 +558,9 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
                 ty_res
             | None -> raise (Type_error (Constructor_undefined s, e.se_loc))
         else
-            match tyenv.values.TryGetValue s with
-            | true, info -> instanciate_scheme current_level info.vi_type
-            | false, _ -> raise (Type_error (Unbound_identifier s, e.se_loc))
+            match try_get_value tyenv s with
+            | Some info -> instanciate_scheme current_level info.vi_type
+            | None -> raise (Type_error (Unbound_identifier s, e.se_loc))
     | SEconstr _ -> dontcare()
     | SEint s ->
         try int s |> ignore
@@ -780,9 +780,9 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
             expression_expect warning_sink tyenv type_vars current_level ty_unit e2
             ty_unit
     | SEset (s, e1) ->
-        match tyenv.values.TryGetValue(s) with
-        | false, _ -> raise (Type_error (Unbound_identifier s, e.se_loc))
-        | true, info ->
+        match try_get_value tyenv s with
+        | None -> raise (Type_error (Unbound_identifier s, e.se_loc))
+        | Some info ->
             if info.vi_access = access.Immutable then
                 raise (Type_error (Not_mutable (Variable, s), e.se_loc))
             expression_expect warning_sink tyenv type_vars current_level info.vi_type e1;
@@ -940,11 +940,19 @@ let tyenv_clone (tyenv : tyenv) =
             then ty
             else Tconstr (id, tyl_clone)
     
-    let values' = ImmutableDictionary.CreateBuilder()
-    for kv in tyenv.values do
-        values'.Add(kv.Key, { kv.Value with vi_type = ty_loop kv.Value.vi_type })
+    let accu_mutable = ImmutableDictionary.CreateBuilder()
+    let accu_immutable = tyenv.values_typeexpr_immutable.ToBuilder()
+    for kv in tyenv.values_typeexpr_mutable do
+        let ty = repr kv.Value.vi_type
+        let ty' = ty_loop ty
+        if LanguagePrimitives.PhysicalEquality ty ty' then
+            accu_immutable.[kv.Key] <- kv.Value
+        else
+            accu_mutable.[kv.Key] <- { kv.Value with vi_type = ty' }
 
-    { tyenv with values = values'.ToImmutable() }
+    { tyenv with
+        values_typeexpr_immutable = accu_immutable.ToImmutable()
+        values_typeexpr_mutable = accu_mutable.ToImmutable() }
 
 type checked_command = 
     | CCexpr of expression * type_expr * location
@@ -973,8 +981,11 @@ let type_command_list warning_sink tyenv cmds =
             ccmds.Add (CChide name)
             tyenv <- tyenv'
         | { sc_desc = SCremove name } ->
-            if tyenv.values.ContainsKey(name) then
-                let tyenv' = { tyenv with values = tyenv.values.Remove(name) }
+            if Option.isSome (try_get_value tyenv name) then
+                let tyenv' =
+                    { tyenv with
+                        values_typeexpr_immutable = tyenv.values_typeexpr_immutable.Remove(name)
+                        values_typeexpr_mutable = tyenv.values_typeexpr_mutable.Remove(name) }
                 tyenvs.Add(tyenv')
                 ccmds.Add(CCremove name)
                 tyenv <- tyenv'
