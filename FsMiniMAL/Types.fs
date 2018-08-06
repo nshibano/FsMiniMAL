@@ -202,8 +202,10 @@ let add_exn_constructor tyenv name args =
         constructors = tyenv.constructors.Add(name, ci)
         exn_constructors = Array.append tyenv.exn_constructors [| (name, ci) |] }, tag
 
-let add_values tyenv (new_values : (string * value_info) seq) =
-    { tyenv with values = tyenv.values.SetItems(new_values) }
+let add_values (tyenv : tyenv) (new_values : (string * value_info) list) =
+    let accu = tyenv.values.ToBuilder()
+    List.iter (fun (name, info) -> accu.[name] <- info) new_values
+    { tyenv with values = accu.ToImmutable() }
 
 let add_value tyenv name info =
     { tyenv with values = tyenv.values.SetItem(name, info) }

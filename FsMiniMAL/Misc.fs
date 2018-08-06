@@ -17,13 +17,6 @@ type System.Text.StringBuilder with
     member sb.Add(c : char, n : int) = sb.Append(c, n) |> ignore
     member sb.Add(s : string) = sb.Append(s) |> ignore
 
-type ImmutableDictionary<'T, 'U> with
-    member this.SetItems(items : ('T * 'U) seq) =
-        let accu = this.ToBuilder()
-        for k, v in items do
-            accu.[k] <- v
-        accu.ToImmutable()
-
 type dirflag = 
     | Upto
     | Downto
