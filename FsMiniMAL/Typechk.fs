@@ -917,8 +917,7 @@ let tyenv_clone (tyenv : tyenv) =
             clone
     
     let rec ty_loop (ty : type_expr) =
-        let ty = repr ty
-        match ty with
+        match repr ty with
         | Tvar tv ->
             if tv.level = generic_level
             then ty
@@ -926,7 +925,10 @@ let tyenv_clone (tyenv : tyenv) =
         | Tarrow (name, ty1, ty2) ->
             let ty1_clone = ty_loop ty1
             let ty2_clone = ty_loop ty2
-            Tarrow (name, ty1_clone, ty2_clone)
+            if LanguagePrimitives.PhysicalEquality ty1 ty1_clone && LanguagePrimitives.PhysicalEquality ty2 ty2_clone then
+                ty
+            else
+                Tarrow (name, ty1_clone, ty2_clone)
         | Ttuple tyl ->
             let tyl_clone = List.map ty_loop tyl
             if List.forall2 LanguagePrimitives.PhysicalEquality tyl tyl_clone
