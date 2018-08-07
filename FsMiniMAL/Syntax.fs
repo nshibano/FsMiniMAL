@@ -94,6 +94,7 @@ and command_desc =
     | SChide of string
     | SCremove of string
     | SCexn of string * type_expr list
+    | SClex of unit
 
 let describe_location (loc : location) =
     let {src = input; st = st; ed = ed} = loc

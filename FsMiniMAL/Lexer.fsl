@@ -73,6 +73,7 @@ and main =
   | ">>>" | "<<<"                            
   | "**"                                     { INFIX4(lexeme_string lexbuf) }
   | "//"                                     { eol_comment lexbuf.StartPos lexbuf }
+  | '?'                                      { QMARK }
   | eof                                      { EOF }
   | _                                        { raise (Lexical_error Illegal_character) }
 

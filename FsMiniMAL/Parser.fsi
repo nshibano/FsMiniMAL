@@ -3,6 +3,7 @@ module FsMiniMAL.Parser
 type token = 
   | WITH
   | WHILE
+  | WHEN
   | VAR
   | VAL
   | TYPE
@@ -12,7 +13,7 @@ type token =
   | REMOVE
   | OF
   | MUTABLE
-  | IN
+  | LEX
   | IF
   | HIDE
   | FUNCT
@@ -24,12 +25,12 @@ type token =
   | ELSE
   | DOWNTO
   | DO
-  | WHEN
   | CATCH
   | CASE
   | BEGIN
   | AS
   | AND
+  | QMARK
   | EXCLAMATION
   | RBRACE
   | BARRBRACKET
@@ -72,6 +73,7 @@ type token =
 type tokenId = 
     | TOKEN_WITH
     | TOKEN_WHILE
+    | TOKEN_WHEN
     | TOKEN_VAR
     | TOKEN_VAL
     | TOKEN_TYPE
@@ -81,7 +83,7 @@ type tokenId =
     | TOKEN_REMOVE
     | TOKEN_OF
     | TOKEN_MUTABLE
-    | TOKEN_IN
+    | TOKEN_LEX
     | TOKEN_IF
     | TOKEN_HIDE
     | TOKEN_FUNCT
@@ -93,12 +95,12 @@ type tokenId =
     | TOKEN_ELSE
     | TOKEN_DOWNTO
     | TOKEN_DO
-    | TOKEN_WHEN
     | TOKEN_CATCH
     | TOKEN_CASE
     | TOKEN_BEGIN
     | TOKEN_AS
     | TOKEN_AND
+    | TOKEN_QMARK
     | TOKEN_EXCLAMATION
     | TOKEN_RBRACE
     | TOKEN_BARRBRACKET
@@ -187,6 +189,18 @@ type nonTerminalId =
     | NONTERM_Opt_mutable
     | NONTERM_Type_params
     | NONTERM_Type_var_list
+    | NONTERM_Lexer_def_list
+    | NONTERM_Lexer_def
+    | NONTERM_Lexer_regexp_1
+    | NONTERM_Lexer_regexp_2
+    | NONTERM_Lexer_regexp_3
+    | NONTERM_Lexer_charset_1
+    | NONTERM_Lexer_charset_2
+    | NONTERM_Lexer_rule_list
+    | NONTERM_Lexer_rule
+    | NONTERM_Lexer_rule_args
+    | NONTERM_Lexer_rule_case_list
+    | NONTERM_Lexer_rule_case
 /// This function maps tokens to integer indexes
 val tagOfToken: token -> int
 

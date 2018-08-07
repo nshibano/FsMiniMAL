@@ -66,7 +66,7 @@ let rec command (alloc : Allocator) (cmd : Syntax.command) : Value.code =
         let uel = List.map (fun (_, e) -> expression alloc e) l
         let ofsl = List.map (fun (name, _) -> alloc.Add(name, access.Mutable)) l
         UCvar(Array.ofSeq (List.zip ofsl uel))
-    | SCtype _ | SChide _ | SCremove _ | SCexn _ -> dontcare ()
+    | SCtype _ | SChide _ | SCremove _ | SCexn _ | SClex _ -> dontcare()
 
 and expression (alloc : Allocator) (se : Syntax.expression) : Value.code = 
     let locals_at_start = alloc.Locals

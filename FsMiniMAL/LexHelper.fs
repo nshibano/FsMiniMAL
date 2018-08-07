@@ -36,6 +36,7 @@ let ident_or_keyword : LexBuffer<char> -> token =
     d.Add("hide", HIDE)
     d.Add("if", IF)
     d.Add("infinity", FLOAT infinity)
+    d.Add("lex", LEX)
     d.Add("mutable", MUTABLE)
     d.Add("nan", FLOAT nan)
     d.Add("of", OF)
