@@ -48,6 +48,18 @@ and pattern_desc =
     // after typecheck only
     | SPblock of int * pattern list
 
+type regexp = 
+    | Alt of regexp list
+    | Seq of regexp list
+    | Inp of input
+    | Star of regexp
+    | Macro of string
+
+and input =
+    | Alphabet of uint32
+    | Any 
+    | NotCharSet of Set<uint32>
+
 type expression = 
     { mutable se_desc : expression_desc
       se_loc : location }
@@ -94,7 +106,11 @@ and command_desc =
     | SChide of string
     | SCremove of string
     | SCexn of string * type_expr list
-    | SClex of unit
+    | SClex of lex_def list
+
+and lex_def =
+    | Macro_def of string * regexp
+    | Rules_def of (string * string list * (regexp * expression) list) list
 
 let describe_location (loc : location) =
     let {src = input; st = st; ed = ed} = loc

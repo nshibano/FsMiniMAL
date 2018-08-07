@@ -376,40 +376,40 @@ Type_var_list :
 /* Lexer definitions */
 
 Lexer_def_list :
-    | /* epsilon */                     { () }
-    | Lexer_def Opt_semi Lexer_def_list { () }
+    | /* epsilon */                     { [] }
+    | Lexer_def Opt_semi Lexer_def_list { $1 :: $3 }
 
 Lexer_def :
-    | VAL IDENT EQUAL Lexer_regexp_1 { () }
-    | FUN Lexer_rule_list            { () }
+    | VAL IDENT EQUAL Lexer_regexp_1 { Macro_def ($2, $4) }
+    | FUN Lexer_rule_list            { Rules_def $2 }
 
 Lexer_regexp_1 :
-    | Lexer_regexp_1 BAR Lexer_regexp_2 { () }
-    | Lexer_regexp_2  { () }
+    | Lexer_regexp_1 BAR Lexer_regexp_2 { Alt [$1;$3]  }
+    | Lexer_regexp_2                    { $1 }
 
 Lexer_regexp_2 :
-    | Lexer_regexp_2 Lexer_regexp_3 { () }
-    | Lexer_regexp_3 { () }
+    | Lexer_regexp_2 Lexer_regexp_3 { Seq [$1; $2] }
+    | Lexer_regexp_3                { $1 }
 
 Lexer_regexp_3 :
-    | Lexer_regexp_3 INFIX2 { () }
-    | Lexer_regexp_3 STAR { () }
-    | Lexer_regexp_3 QMARK { () }
-    | CHAR       { () }
-    | UNDERSCORE { () }
-    | STRING     { () }
-    | IDENT      { () }
-    | LPAREN Lexer_regexp_1 RPAREN { () }
-    | LBRACKET Lexer_charset_1 RBRACKET { () }
-    | LBRACKET INFIX1 Lexer_charset_1 RBRACKET { () }
+    | Lexer_regexp_3 INFIX2                    { Seq[$1;Star $1] }
+    | Lexer_regexp_3 STAR                      { Star $1 }
+    | Lexer_regexp_3 QMARK                     { Alt[Seq[];$1] }
+    | CHAR                                     { Inp (Alphabet (uint32 $1)) }
+    | UNDERSCORE                               { Inp Any }
+    | STRING                                   { Seq ([for c in $1 -> Inp (Alphabet (uint32 c))]) }
+    | IDENT                                    { Macro $1 }
+    | LPAREN Lexer_regexp_1 RPAREN             { $2 }
+    | LBRACKET Lexer_charset_1 RBRACKET        { Alt ([for c in $2 -> Inp (Alphabet c)]) }
+    | LBRACKET INFIX1 Lexer_charset_1 RBRACKET { Inp(NotCharSet($3)) }
 
 Lexer_charset_1 :
-    | Lexer_charset_2 Lexer_charset_1 { () }
-    | Lexer_charset_2 { () }
+    | Lexer_charset_1 Lexer_charset_2 { Set.union $1 $2 }
+    | Lexer_charset_2                 { $1 }
 
 Lexer_charset_2 :
-    | CHAR                        { () }
-    | CHAR SUBTRACTIVE CHAR       { () }
+    | CHAR                  { Set.singleton (uint32 $1) }
+    | CHAR SUBTRACTIVE CHAR { Set.ofSeq ([ for c in $1 .. $3 -> uint32 c ]) }
 
 Lexer_rule_list :
     | Lexer_rule                     { [$1] }
@@ -423,7 +423,7 @@ Lexer_rule_args :
     | IDENT Lexer_rule_args { $1 :: $2 }
 
 Lexer_rule_case_list :
-    | Lexer_rule_case                          { [$1] }
+    | Lexer_rule_case                      { [$1] }
     | Lexer_rule_case Lexer_rule_case_list { $1 :: $2 }
 
 Lexer_rule_case :
