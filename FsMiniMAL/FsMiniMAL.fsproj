@@ -25,10 +25,10 @@
     <Compile Include="Lexer.fs" />
     <Compile Include="Types.fs" />
     <Compile Include="Unify.fs" />
+    <Compile Include="MalLex.fs" />
     <Compile Include="Typechk.fs" />
     <Compile Include="Allocator.fs" />
     <Compile Include="Value.fs" />
-    <Compile Include="MalLex.fs" />
     <Compile Include="MalPrintf.fs" />
     <Compile Include="Printer.fs" />
     <Compile Include="Stdlib.fs" />

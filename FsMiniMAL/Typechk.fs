@@ -1012,7 +1012,9 @@ let type_command_list warning_sink tyenv cmds =
                        | SCfun l -> (CCfun (l, new_values, cmd.sc_loc))
                        | _ -> dontcare())
             tyenv <- tyenv'
-        | { sc_desc = SClex _ } -> ()
-        
+        | { sc_desc = SClex lex_defs } ->
+            let lex = MalLex.Compile lex_defs
+            ()
+
     tyenvs.Add(tyenv)
     (tyenvs.ToArray(), ccmds.ToArray())
