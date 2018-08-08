@@ -10,12 +10,12 @@ open Syntax
 type NfaNode = 
     { Id : int
       Transitions : Dictionary<int, NfaNode list>
-      Accepted : expression option }
+      Accepted : int option }
 
 type DfaNode = 
     { Id : int
       Transitions : Dictionary<int, DfaNode>
-      Accepted : expression option }
+      Accepted : int option }
 
 type MultiMap<'a,'b> = Dictionary<'a,'b list>
 
@@ -38,7 +38,7 @@ type NfaNodeMap() =
         map.[nodeId] <- node
         node
 
-let LexerStateToNfa (alphabets : HashSet<int>) (macros: Map<string, regexp>) (clauses: (regexp * expression) list) = 
+let LexerStateToNfa (alphabets : HashSet<int>) (macros: Dictionary<string, regexp>) (clauses: (regexp * expression) list) = 
 
     /// Table allocating node ids 
     let nfaNodeMap = new NfaNodeMap()
@@ -73,19 +73,23 @@ let LexerStateToNfa (alphabets : HashSet<int>) (macros: Map<string, regexp>) (cl
                           yield Inp (Alphabet Alphabet_Others)]
             CompileRegexp re dest
     
+    let actions = List<expression>()
+
     /// Compile an acceptance of a regular expression into the NFA
-    let sTrans (regexp, code) = 
-        let sAccept = nfaNodeMap.NewNfaNode([], Some code)
-        CompileRegexp regexp sAccept 
+    let sTrans (regexp, code) =
+        let actionIndex = actions.Count
+        actions.Add(code)
+        let sAccept = nfaNodeMap.NewNfaNode([], Some actionIndex)
+        CompileRegexp regexp sAccept
 
     let trs = List.map (fun clause -> (Alphabet_Epsilon, sTrans clause)) clauses
     let nfaStartNode = nfaNodeMap.NewNfaNode(trs, None)
-    nfaStartNode, nfaNodeMap
+    nfaStartNode, actions.ToArray(), nfaNodeMap
 
 type NfaNodeIdSetBuilder = HashSet<int>
 type NfaNodeIdSet = int array
 
-let CreateDfaState (builder : NfaNodeIdSetBuilder) : NfaNodeIdSet =
+let createNfaNodeIdSet (builder : NfaNodeIdSetBuilder) : NfaNodeIdSet =
     let ary = Array.zeroCreate<int> builder.Count
     let mutable ofs = 0
     for id in builder do
@@ -93,8 +97,6 @@ let CreateDfaState (builder : NfaNodeIdSetBuilder) : NfaNodeIdSet =
         ofs <- ofs + 1
     Array.sortInPlace ary
     ary
-
-type NodeSetSet = HashSet<NfaNodeIdSet>
 
 let newDfaNodeId = 
     let i = ref 0 
@@ -124,7 +126,7 @@ let NfaToDfa (nfaNodeMap:NfaNodeMap) nfaStartNode =
         let acc = new NfaNodeIdSetBuilder(HashIdentity.Structural)
         for i in moves do
             EClosure1 acc nfaNodeMap.[i];
-        CreateDfaState acc
+        createNfaNodeIdSet acc
 
     // Compute all the immediate one-step moves for a set of NFA states, as a dictionary
     // mapping inputs to destination lists
@@ -140,7 +142,7 @@ let NfaToDfa (nfaNodeMap:NfaNodeMap) nfaStartNode =
 
     let acc = new NfaNodeIdSetBuilder(HashIdentity.Structural)
     EClosure1 acc nfaStartNode;
-    let nfaSet0 = CreateDfaState acc
+    let nfaSet0 = createNfaNodeIdSet acc
 
     let dfaNodes = ref (Map.empty<NfaNodeIdSet,DfaNode>)
 
@@ -194,7 +196,7 @@ let NfaToDfa (nfaNodeMap:NfaNodeMap) nfaStartNode =
         |> List.sortBy (fun s -> s.Id)
     ruleStartNode,ruleNodes
 
-let GetAlphabets (lex_defs : lex_def list) =
+let GetAlphabets (macros : Dictionary<string, regexp>) (clauses : (regexp * expression) list) =
     let accu = HashSet<int>()
     let rec loop (re : regexp) =
         match re with
@@ -208,31 +210,28 @@ let GetAlphabets (lex_defs : lex_def list) =
             for c in set do
                 accu.Add(c) |> ignore
         | Star re -> loop re
-        | Macro _ -> ()
-
-    for lex_def in lex_defs do
-        match lex_def with
-        | Macro_def (_, re) -> loop re
-        | Rules_def rules ->
-            for _, _, clauses in rules do
-                for re, _ in clauses do
-                    loop re
+        | Macro name ->
+            match macros.TryGetValue(name) with
+            | true, re -> loop re
+            | false, _ -> failwithf "Macro %s is not defined." name
+    
+    for re, _ in clauses do
+        loop re
     accu
 
 let Compile (defs : lex_def list) =
-    let alphabets = GetAlphabets defs
-    let mutable macros = Map<string, regexp>([("eof", Inp (Alphabet (Alphabet_Eof)))])
+    let macros = Dictionary<string, regexp>()
+    macros.Add("eof", Inp (Alphabet (Alphabet_Eof)))
     let accu = List()
     for def in defs do
         match def with
-        | Macro_def (name, regexp) -> macros <- macros.Add(name, regexp)
+        | Macro_def (name, regexp) -> macros.Add(name, regexp)
         | Rules_def rules ->
             let perRuleData = List<_>()
-            let dfaNodes = List<_>()
             for (name, args, clauses) in rules do
-                let nfa, nfaNodeMap = LexerStateToNfa alphabets macros clauses
+                let alphabets = GetAlphabets macros clauses
+                let nfa, actions, nfaNodeMap = LexerStateToNfa alphabets macros clauses
                 let ruleStartNode, ruleNodes = NfaToDfa nfaNodeMap nfa
-                perRuleData.Add((name, args, ruleStartNode))
-                dfaNodes.Add(ruleNodes)
-            accu.Add((perRuleData.ToArray(), dfaNodes.ToArray()))
+                perRuleData.Add((name, args, alphabets, ruleStartNode, actions))
+            accu.Add((perRuleData.ToArray()))
     accu.ToArray()
