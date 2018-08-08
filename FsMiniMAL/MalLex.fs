@@ -15,7 +15,7 @@ type NfaNode =
 type DfaNode = 
     { Id : int
       Transitions : Dictionary<int, DfaNode>
-      Accepted : expression array }
+      Accepted : expression option }
 
 type MultiMap<'a,'b> = Dictionary<'a,'b list>
 
@@ -27,18 +27,19 @@ let AddToMultiMap (trDict:MultiMap<_,_>) a b =
     trDict.[a] <- b::prev
 
 type NfaNodeMap() = 
-    let map = new Dictionary<int,NfaNode>()
+    let map = new Dictionary<int, NfaNode>()
     member x.Item with get(nid) = map.[nid]
     member x.Count = map.Count
 
     member x.NewNfaNode(trs, ac) = 
         let nodeId = map.Count+1 // ID zero is reserved
-        let trDict = new Dictionary<_,_>(List.length trs)
-        for (a,b) in trs do
+
+        let trDict = new Dictionary<_,_>()
+        for (a, b) in trs do
            AddToMultiMap trDict a b
            
-        let node : NfaNode = {Id=nodeId; Transitions=trDict; Accepted=ac}
-        map.[nodeId] <-node;
+        let node : NfaNode = { Id=nodeId; Transitions=trDict; Accepted=ac }
+        map.[nodeId] <- node
         node
 
 let LexerStateToNfa (alphabets : HashSet<int>) (macros: Map<string, regexp>) (clauses: (regexp * expression) list) = 
@@ -50,13 +51,12 @@ let LexerStateToNfa (alphabets : HashSet<int>) (macros: Map<string, regexp>) (cl
     let rec CompileRegexp re dest = 
         match re with 
         | Alt res -> 
-            let trs = List.map (fun re -> (Alphabet_Epsilon,CompileRegexp re dest)) res
+            let trs = List.map (fun re -> (Alphabet_Epsilon, CompileRegexp re dest)) res
             nfaNodeMap.NewNfaNode(trs, None)
         | Seq res -> 
             List.foldBack CompileRegexp res dest 
         | Inp (Alphabet c) -> 
             nfaNodeMap.NewNfaNode([(c, dest)], None)
-            
         | Star re -> 
             let nfaNode = nfaNodeMap.NewNfaNode([(Alphabet_Epsilon, dest)], None)
             let sre = CompileRegexp re nfaNode
@@ -65,13 +65,11 @@ let LexerStateToNfa (alphabets : HashSet<int>) (macros: Map<string, regexp>) (cl
         | Macro m -> 
             if not (macros.ContainsKey(m)) then failwith ("The macro "+m+" is not defined");
             CompileRegexp (macros.[m]) dest 
-
         | Inp Any -> 
             let re = Alt([ for c in alphabets do
                              yield Inp (Alphabet c)
                            yield Inp (Alphabet Alphabet_Others)])
             CompileRegexp re dest
-
         | Inp (NotCharSet chars) ->
             let re = Alt [for c in alphabets do
                             if not (chars.Contains(c)) then
@@ -139,9 +137,17 @@ type NodeSetSet = Set<NfaNodeIdSet>
 let newDfaNodeId = 
     let i = ref 0 
     fun () -> let res = !i in incr i; res
-   
+
+let array_chooseFirst (f : 'a -> 'b option) (ary : 'a array) =
+    let rec loop i =
+        if i < ary.Length then
+            match f ary.[i] with
+            | Some y -> Some y
+            | None -> loop (i + 1)
+        else None
+    loop 0
+
 let NfaToDfa (nfaNodeMap:NfaNodeMap) nfaStartNode = 
-    let numNfaNodes = nfaNodeMap.Count
     let rec EClosure1 (acc:NfaNodeIdSetBuilder) (n:NfaNode) = 
         if not (acc.Contains(n.Id)) then 
             acc.Add(n.Id) |> ignore;
@@ -183,7 +189,7 @@ let NfaToDfa (nfaNodeMap:NfaNodeMap) nfaStartNode =
             let dfaNode =
                 { Id= newDfaNodeId(); 
                   Transitions = Dictionary();
-                  Accepted=  Array.choose (fun nid -> nfaNodeMap.[nid].Accepted) nfaSet.Elements }
+                  Accepted = array_chooseFirst (fun nid -> nfaNodeMap.[nid].Accepted) nfaSet.Elements }
             //Printf.printfn "id = %d" dfaNode.Id;
 
             dfaNodes := (!dfaNodes).Add(nfaSet,dfaNode); 
