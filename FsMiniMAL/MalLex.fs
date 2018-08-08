@@ -17,10 +17,12 @@ type DfaNode =
       Transitions : Dictionary<int, DfaNode>
       Accepted : int option }
 
-type MultiMap<'a,'b> = Dictionary<'a,'b list>
+type MultiMap<'a, 'b> = Dictionary<'a, 'b list>
 
 let AddToMultiMap (map : MultiMap<'a, 'b>) (a : 'a) (b : 'b) =
-    map.[a] <- b :: (if map.ContainsKey(a) then map.[a] else [])
+    match map.TryGetValue a with
+    | true, prev -> map.[a] <- b :: prev
+    | false, _ -> map.[a] <- [b]
 
 type NfaNodeMap() = 
     let map = new Dictionary<int, NfaNode>()
@@ -28,13 +30,13 @@ type NfaNodeMap() =
     member x.Count = map.Count
 
     member x.NewNfaNode(trs, ac) = 
-        let nodeId = map.Count+1 // ID zero is reserved
+        let nodeId = map.Count
 
         let trDict = new Dictionary<_,_>()
         for (a, b) in trs do
            AddToMultiMap trDict a b
            
-        let node : NfaNode = { Id=nodeId; Transitions=trDict; Accepted=ac }
+        let node : NfaNode = { Id = nodeId; Transitions = trDict; Accepted = ac }
         map.[nodeId] <- node
         node
 
@@ -111,90 +113,69 @@ let array_chooseFirst (f : 'a -> 'b option) (ary : 'a array) =
         else None
     loop 0
 
-let NfaToDfa (nfaNodeMap:NfaNodeMap) nfaStartNode = 
-    let rec EClosure1 (acc:NfaNodeIdSetBuilder) (n:NfaNode) = 
+let NfaToDfa (nfaNodeMap : NfaNodeMap) (nfaStartNode : NfaNode) = 
+    let rec EClosure1 (acc : NfaNodeIdSetBuilder) (n : NfaNode) = 
         if not (acc.Contains(n.Id)) then 
-            acc.Add(n.Id) |> ignore;
-            if n.Transitions.ContainsKey(Alphabet_Epsilon) then
-                match n.Transitions.[Alphabet_Epsilon] with 
-                | [] -> () // this Clause is an optimization - the list is normally empty
-                | tr -> 
-                    //printfn "n.Id = %A, #Epsilon = %d" n.Id tr.Length
-                    tr |> List.iter (EClosure1 acc) 
+            acc.Add(n.Id) |> ignore
+            match n.Transitions.TryGetValue(Alphabet_Epsilon) with
+            | true, tr -> List.iter (EClosure1 acc) tr
+            | false, _ -> ()
 
     let EClosure (moves : list<int>) = 
         let acc = new NfaNodeIdSetBuilder(HashIdentity.Structural)
         for i in moves do
-            EClosure1 acc nfaNodeMap.[i];
+            EClosure1 acc nfaNodeMap.[i]
         createNfaNodeIdSet acc
 
     // Compute all the immediate one-step moves for a set of NFA states, as a dictionary
     // mapping inputs to destination lists
     let ComputeMoves (nset : NfaNodeIdSet) = 
-        let moves = new MultiMap<_,_>()
+        let moves = new MultiMap<_, _>()
         Array.iter (fun nodeId -> 
-            for (KeyValue(inp,dests)) in nfaNodeMap.[nodeId].Transitions do
-                if inp <> Alphabet_Epsilon then 
-                    match dests with 
-                    | [] -> ()  // this Clause is an optimization - the list is normally empty
-                    | tr -> tr |> List.iter(fun dest -> AddToMultiMap moves inp dest.Id)) nset
+            for KeyValue(inp, dests) in nfaNodeMap.[nodeId].Transitions do
+                if inp <> Alphabet_Epsilon then
+                    List.iter (fun (dest : NfaNode) -> AddToMultiMap moves inp dest.Id) dests) nset
         moves
 
     let acc = new NfaNodeIdSetBuilder(HashIdentity.Structural)
-    EClosure1 acc nfaStartNode;
+    EClosure1 acc nfaStartNode
     let nfaSet0 = createNfaNodeIdSet acc
 
-    let dfaNodes = ref (Map.empty<NfaNodeIdSet,DfaNode>)
+    let dfaNodes = Dictionary<NfaNodeIdSet, DfaNode>(HashIdentity.Structural)
 
-    let GetDfaNode nfaSet = 
-        if (!dfaNodes).ContainsKey(nfaSet) then 
-            (!dfaNodes).[nfaSet]
-        else 
+    let GetDfaNode (nfaSet : NfaNodeIdSet) =
+        match dfaNodes.TryGetValue(nfaSet) with
+        | true, dfaNode -> dfaNode
+        | false, _ ->
             let dfaNode =
-                { Id= newDfaNodeId(); 
-                  Transitions = Dictionary();
+                { Id = newDfaNodeId()
+                  Transitions = Dictionary()
                   Accepted = array_chooseFirst (fun nid -> nfaNodeMap.[nid].Accepted) nfaSet }
-            //Printf.printfn "id = %d" dfaNode.Id;
-
-            dfaNodes := (!dfaNodes).Add(nfaSet, dfaNode); 
+            dfaNodes.[nfaSet] <- dfaNode
             dfaNode
-            
-    let workList = ref [nfaSet0]
-    let doneSet = ref Set.empty
+    
+    let workList = Queue<_>([| nfaSet0 |])
+    let doneSet = HashSet<NfaNodeIdSet>(HashIdentity.Structural)
 
-    //let count = ref 0 
-    let rec Loop () = 
-        match !workList with 
-        | [] -> ()
-        | nfaSet ::t -> 
-            workList := t;
-            if (!doneSet).Contains(nfaSet) then 
-                Loop () 
-            else
-                let moves = ComputeMoves nfaSet
-                for (KeyValue(inp,movesForInput)) in moves do
-                    assert (inp <> Alphabet_Epsilon);
-                    let moveSet = EClosure movesForInput;
-                    if moveSet.Length <> 0 then 
-                        //incr count
-                        let dfaNode = GetDfaNode nfaSet
-                        dfaNode.Transitions.[inp] <- GetDfaNode moveSet
-                        (* Printf.printf "%d (%s) : %s --> %d (%s)\n" dfaNode.Id dfaNode.Name (match inp with EncodeChar c -> String.make 1 c | LEof -> "eof") moveSetDfaNode.Id moveSetDfaNode.Name;*)
-                        workList := moveSet :: !workList;
+    while workList.Count > 0 do
+        let nfaSet = workList.Dequeue()
+        if not (doneSet.Contains(nfaSet)) then
+            let moves = ComputeMoves nfaSet
+            for KeyValue(inp, movesForInput) in moves do
+                assert (inp <> Alphabet_Epsilon)
+                let moveSet = EClosure movesForInput
+                if moveSet.Length <> 0 then 
+                    let dfaNode = GetDfaNode nfaSet
+                    dfaNode.Transitions.[inp] <- GetDfaNode moveSet
+                    workList.Enqueue(moveSet)
+            doneSet.Add(nfaSet) |> ignore
 
-                doneSet := (!doneSet).Add(nfaSet);
-
-
-                Loop()
-    Loop();
-    //Printf.printfn "count = %d" !count;
     let ruleStartNode = GetDfaNode nfaSet0
-    let ruleNodes = 
-        (!dfaNodes) 
-        |> Seq.map (fun kvp -> kvp.Value) 
-        |> Seq.toList
-        |> List.sortBy (fun s -> s.Id)
-    ruleStartNode,ruleNodes
+    let ruleNodes =
+        let ary = Array.ofSeq (dfaNodes.Values)
+        Array.sortInPlaceBy (fun (s : DfaNode) -> s.Id) ary
+        ary
+    ruleStartNode, ruleNodes
 
 let GetAlphabets (macros : Dictionary<string, regexp>) (clauses : (regexp * expression) list) =
     let accu = HashSet<int>()
