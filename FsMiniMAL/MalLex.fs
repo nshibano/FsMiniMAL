@@ -19,7 +19,6 @@ type DfaNode =
       Transitions : Dictionary<int, DfaNode>
       Accepted : int option }
 
-
 let AddToMultiMap (map : MultiMap<'a, 'b>) (a : 'a) (b : 'b) =
     match map.TryGetValue a with
     | true, l -> l.Add(b)
@@ -101,7 +100,7 @@ let createNfaNodeIdSet (builder : NfaNodeIdSetBuilder) : NfaNodeIdSet =
     for id in builder do
         ary.[ofs] <- id
         ofs <- ofs + 1
-    Array.sortInPlace ary
+    System.Array.Sort(ary)
     ary
 
 let array_chooseFirst (f : 'a -> 'b option) (ary : 'a array) =
@@ -114,11 +113,12 @@ let array_chooseFirst (f : 'a -> 'b option) (ary : 'a array) =
     loop 0
 
 let NfaToDfa (nfaNodeMap : NfaNodeMap) (nfaStartNode : NfaNode) = 
-    let rec EClosure1 (acc : NfaNodeIdSetBuilder) (n : NfaNode) = 
-        if not (acc.Contains(n.Id)) then 
-            acc.Add(n.Id) |> ignore
+    let rec EClosure1 (acc : NfaNodeIdSetBuilder) (n : NfaNode) =
+        if acc.Add(n.Id) then
             match n.Transitions.TryGetValue(Alphabet_Epsilon) with
-            | true, tr -> Seq.iter (EClosure1 acc) tr
+            | true, tr ->
+                for n in tr do
+                    EClosure1 acc n
             | false, _ -> ()
 
     let EClosure (moves : seq<int>) = 
@@ -130,11 +130,12 @@ let NfaToDfa (nfaNodeMap : NfaNodeMap) (nfaStartNode : NfaNode) =
     // Compute all the immediate one-step moves for a set of NFA states, as a dictionary
     // mapping inputs to destination lists
     let ComputeMoves (nset : NfaNodeIdSet) = 
-        let moves = new MultiMap<_, _>()
-        Array.iter (fun nodeId -> 
+        let moves = new MultiMap<int, int>()
+        for nodeId in nset do
             for KeyValue(inp, dests) in nfaNodeMap.[nodeId].Transitions do
                 if inp <> Alphabet_Epsilon then
-                    Seq.iter (fun (dest : NfaNode) -> AddToMultiMap moves inp dest.Id) dests) nset
+                    for dest in dests do
+                        AddToMultiMap moves inp dest.Id
         moves
 
     let acc = new NfaNodeIdSetBuilder(HashIdentity.Structural)
@@ -164,7 +165,7 @@ let NfaToDfa (nfaNodeMap : NfaNodeMap) (nfaStartNode : NfaNode) =
             for KeyValue(inp, movesForInput) in moves do
                 assert (inp <> Alphabet_Epsilon)
                 let moveSet = EClosure movesForInput
-                if moveSet.Length <> 0 then 
+                if moveSet.Length > 0 then 
                     let dfaNode = GetDfaNode nfaSet
                     dfaNode.Transitions.[inp] <- GetDfaNode moveSet
                     workList.Enqueue(moveSet)
