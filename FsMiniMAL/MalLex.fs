@@ -19,12 +19,8 @@ type DfaNode =
 
 type MultiMap<'a,'b> = Dictionary<'a,'b list>
 
-let LookupMultiMap (trDict : MultiMap<_,_>) a =
-    if trDict.ContainsKey(a) then trDict.[a] else []
-
-let AddToMultiMap (trDict:MultiMap<_,_>) a b =
-    let prev = LookupMultiMap trDict a
-    trDict.[a] <- b::prev
+let AddToMultiMap (map : MultiMap<'a, 'b>) (a : 'a) (b : 'b) =
+    map.[a] <- b :: (if map.ContainsKey(a) then map.[a] else [])
 
 type NfaNodeMap() = 
     let map = new Dictionary<int, NfaNode>()
