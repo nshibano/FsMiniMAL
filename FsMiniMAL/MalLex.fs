@@ -7,9 +7,11 @@
 open System.Collections.Generic
 open Syntax
 
+type MultiMap<'a, 'b> = Dictionary<'a, List<'b>>
+
 type NfaNode = 
     { Id : int
-      Transitions : Dictionary<int, NfaNode list>
+      Transitions : MultiMap<int, NfaNode>
       Accepted : int option }
 
 type DfaNode = 
@@ -17,12 +19,14 @@ type DfaNode =
       Transitions : Dictionary<int, DfaNode>
       Accepted : int option }
 
-type MultiMap<'a, 'b> = Dictionary<'a, 'b list>
 
 let AddToMultiMap (map : MultiMap<'a, 'b>) (a : 'a) (b : 'b) =
     match map.TryGetValue a with
-    | true, prev -> map.[a] <- b :: prev
-    | false, _ -> map.[a] <- [b]
+    | true, l -> l.Add(b)
+    | false, _ ->
+        let l = List<'b>()
+        l.Add(b)
+        map.[a] <- l
 
 type NfaNodeMap() = 
     let map = new Dictionary<int, NfaNode>()
@@ -32,7 +36,7 @@ type NfaNodeMap() =
     member x.NewNfaNode(trs, ac) = 
         let nodeId = map.Count
 
-        let trDict = new Dictionary<_,_>()
+        let trDict = new Dictionary<_, _>()
         for (a, b) in trs do
            AddToMultiMap trDict a b
            
@@ -100,10 +104,6 @@ let createNfaNodeIdSet (builder : NfaNodeIdSetBuilder) : NfaNodeIdSet =
     Array.sortInPlace ary
     ary
 
-let newDfaNodeId = 
-    let i = ref 0 
-    fun () -> let res = !i in incr i; res
-
 let array_chooseFirst (f : 'a -> 'b option) (ary : 'a array) =
     let rec loop i =
         if i < ary.Length then
@@ -118,10 +118,10 @@ let NfaToDfa (nfaNodeMap : NfaNodeMap) (nfaStartNode : NfaNode) =
         if not (acc.Contains(n.Id)) then 
             acc.Add(n.Id) |> ignore
             match n.Transitions.TryGetValue(Alphabet_Epsilon) with
-            | true, tr -> List.iter (EClosure1 acc) tr
+            | true, tr -> Seq.iter (EClosure1 acc) tr
             | false, _ -> ()
 
-    let EClosure (moves : list<int>) = 
+    let EClosure (moves : seq<int>) = 
         let acc = new NfaNodeIdSetBuilder(HashIdentity.Structural)
         for i in moves do
             EClosure1 acc nfaNodeMap.[i]
@@ -134,7 +134,7 @@ let NfaToDfa (nfaNodeMap : NfaNodeMap) (nfaStartNode : NfaNode) =
         Array.iter (fun nodeId -> 
             for KeyValue(inp, dests) in nfaNodeMap.[nodeId].Transitions do
                 if inp <> Alphabet_Epsilon then
-                    List.iter (fun (dest : NfaNode) -> AddToMultiMap moves inp dest.Id) dests) nset
+                    Seq.iter (fun (dest : NfaNode) -> AddToMultiMap moves inp dest.Id) dests) nset
         moves
 
     let acc = new NfaNodeIdSetBuilder(HashIdentity.Structural)
@@ -148,7 +148,7 @@ let NfaToDfa (nfaNodeMap : NfaNodeMap) (nfaStartNode : NfaNode) =
         | true, dfaNode -> dfaNode
         | false, _ ->
             let dfaNode =
-                { Id = newDfaNodeId()
+                { Id = dfaNodes.Count
                   Transitions = Dictionary()
                   Accepted = array_chooseFirst (fun nid -> nfaNodeMap.[nid].Accepted) nfaSet }
             dfaNodes.[nfaSet] <- dfaNode
