@@ -28,6 +28,7 @@
     <Compile Include="Typechk.fs" />
     <Compile Include="Allocator.fs" />
     <Compile Include="Value.fs" />
+    <Compile Include="MalLex.fs" />
     <Compile Include="MalPrintf.fs" />
     <Compile Include="Printer.fs" />
     <Compile Include="Stdlib.fs" />

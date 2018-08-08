@@ -1,4 +1,7 @@
 ﻿// Derived from https://github.com/Microsoft/visualfsharp/blob/master/src/fsharp/FSharp.Core/printf.fs
+// This file is licensed in MIT License.
+// Copyright (c) Microsoft Corporation.  All Rights Reserved.
+// Copyright (c) Nozomi Shibano
 module FsMiniMAL.PrintfFormat
 
 open System

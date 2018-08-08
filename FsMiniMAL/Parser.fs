@@ -2731,7 +2731,7 @@ let _fsyacc_reductions ()  =    [|
                 (
                    (
 # 398 "Parser.fsy"
-                                                                      Inp (Alphabet (uint32 _1)) 
+                                                                      Inp (Alphabet (int _1)) 
                    )
 # 398 "Parser.fsy"
                  : 'Lexer_regexp_3));
@@ -2752,7 +2752,7 @@ let _fsyacc_reductions ()  =    [|
                 (
                    (
 # 400 "Parser.fsy"
-                                                                      Seq ([for c in _1 -> Inp (Alphabet (uint32 c))]) 
+                                                                      Seq ([for c in _1 -> Inp (Alphabet (int c))]) 
                    )
 # 400 "Parser.fsy"
                  : 'Lexer_regexp_3));
@@ -2831,7 +2831,7 @@ let _fsyacc_reductions ()  =    [|
                 (
                    (
 # 411 "Parser.fsy"
-                                                   Set.singleton (uint32 _1) 
+                                                   Set.singleton (int _1) 
                    )
 # 411 "Parser.fsy"
                  : 'Lexer_charset_2));
@@ -2844,7 +2844,7 @@ let _fsyacc_reductions ()  =    [|
                 (
                    (
 # 412 "Parser.fsy"
-                                                   Set.ofSeq ([ for c in _1 .. _3 -> uint32 c ]) 
+                                                   Set.ofSeq [ for c in _1 .. _3 -> int c ] 
                    )
 # 412 "Parser.fsy"
                  : 'Lexer_charset_2));

@@ -56,9 +56,13 @@ type regexp =
     | Macro of string
 
 and input =
-    | Alphabet of uint32
+    | Alphabet of int
     | Any 
-    | NotCharSet of Set<uint32>
+    | NotCharSet of Set<int>
+
+let Alphabet_Epsilon = -1
+let Alphabet_Eof = -2
+let Alphabet_Others = -3
 
 type expression = 
     { mutable se_desc : expression_desc
