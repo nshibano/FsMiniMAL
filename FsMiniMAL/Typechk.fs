@@ -965,7 +965,7 @@ type checked_command =
     | CChide of string
     | CCremove of string
     | CCexn of string * location
-    | CClex of (string * string list * HashSet<int> * DfaNode * expression array) array * (string * value_info) list
+    | CClex of (string * string list * HashSet<int> * DfaNode * expression array * location) array * (string * value_info) list
 
 let type_command_list warning_sink tyenv cmds =
     let mutable tyenv = tyenv_clone tyenv
@@ -1018,7 +1018,7 @@ let type_command_list warning_sink tyenv cmds =
             let ruless = MalLex.Compile lex_defs
             for rules in ruless do
                 // validate function names
-                let names = Array.map (fun (name, _, _, _, _) -> name) rules
+                let names = Array.map (fun (name, _, _, _, _, _) -> name) rules
                 Array.iter (fun name -> if is_constructor name then raise (Type_error (Invalid_identifier, cmd.sc_loc))) names
                 all_differ cmd.sc_loc kind.Function_name kind.Function_definition names
                 
@@ -1027,7 +1027,7 @@ let type_command_list warning_sink tyenv cmds =
                 let tyenv_with_dummy_fun_defs = add_values tyenv dummy_infos
 
                 let new_values = List()
-                for name, args, alphabets, clauses, actions in rules do
+                for name, args, alphabets, clauses, actions, loc in rules do
                     let arg_infos = (List.map (fun arg -> (arg, { vi_type = new_tvar 1; vi_access = access.Immutable; })) args) @ [("lexbuf", { vi_type = Tconstr (type_id.LEXBUF, []); vi_access = Immutable })]
                     let tyenv_with_arg_defs = add_values tyenv_with_dummy_fun_defs arg_infos
                     let ty_res = new_tvar 1
@@ -1039,7 +1039,13 @@ let type_command_list warning_sink tyenv cmds =
                 
                 let new_values = List.ofSeq new_values
                 List.iter (fun (name, ty) -> generalize 0 ty) new_values
-                List.iter2 (fun (_, dummy_info) (_, ty) -> unify_exp tyenv (let _, _, _, _, actions = rules.[0] in actions.[0]) ty dummy_info.vi_type) dummy_infos new_values
+                let mutable i = 0
+                List.iter2 (fun (_, dummy_info) (_, ty) ->
+                    let _, _, _, _, _, loc = rules.[i]
+                    let ty_expected = dummy_info.vi_type
+                    try unify tyenv ty ty_expected
+                    with Unify -> raise (Type_error (Type_mismatch (tyenv, Expression, ty, ty_expected), loc))
+                    i <- i + 1) dummy_infos new_values
                 let new_values = List.map (fun (name, ty) -> (name, { vi_type = ty; vi_access = Immutable })) new_values
                 let tyenv' = Types.add_values tyenv new_values
                 tyenvs.Add(tyenv)

@@ -114,7 +114,7 @@ and command_desc =
 
 and lex_def =
     | Macro_def of string * regexp
-    | Rules_def of (string * string list * (regexp * expression) list) list
+    | Rules_def of (string * string list * (regexp * expression) list * location) list
 
 let describe_location (loc : location) =
     let {src = input; st = st; ed = ed} = loc

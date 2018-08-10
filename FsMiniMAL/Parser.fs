@@ -2880,7 +2880,7 @@ let _fsyacc_reductions ()  =    [|
                 (
                    (
 # 419 "Parser.fsy"
-                                                                              (_1, _2, _4) 
+                                                                              (_1, _2, _4, get_loc parseState) 
                    )
 # 419 "Parser.fsy"
                  : 'Lexer_rule));

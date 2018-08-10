@@ -416,7 +416,7 @@ Lexer_rule_list :
     | Lexer_rule AND Lexer_rule_list { $1 :: $3 }
 
 Lexer_rule :
-    | IDENT Lexer_rule_args EQUAL Lexer_rule_case_list { ($1, $2, $4) }
+    | IDENT Lexer_rule_args EQUAL Lexer_rule_case_list { ($1, $2, $4, get_loc parseState) }
 
 Lexer_rule_args :
     | /* epsilon */         { [] }

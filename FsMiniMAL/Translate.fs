@@ -279,11 +279,11 @@ let translate_command_list (alloc : Allocator) (tyenvs : tyenv array) (ccmds : c
             let shadowed = find_shadowed_offsets alloc new_values
 
             // Allocate location beforehand, to allow recursive definition.
-            let ofss = Array.map (fun (name, _, _, _, _) -> alloc.Add(name, access.Immutable)) rules
+            let ofss = Array.map (fun (name, _, _, _, _, _) -> alloc.Add(name, access.Immutable)) rules
 
             let accu = List()
             for i = 0 to rules.Length - 1 do
-                let (name, args, alphabets, dfa, actions) = rules.[i]
+                let (name, args, alphabets, dfa, actions, _) = rules.[i]
                 let actions_accu = List()
                 for action in actions do
                     let args = (List.map (fun arg -> { sp_desc = SPid arg; sp_loc = action.se_loc }) args) @ [{ sp_desc = SPid "lexbuf"; sp_loc = action.se_loc }]
