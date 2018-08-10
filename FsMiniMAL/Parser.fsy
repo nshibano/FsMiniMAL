@@ -203,7 +203,7 @@ Expression_2:
     | Expression_2 DOT IDENT                          { make_expr parseState (SEgetfield ($1, $3)) }
     | Expression_2 DOT LBRACKET Expression RBRACKET   { make_binop parseState ".[]" $1 $4 }
     | LPAREN Expression_comma_list RPAREN             { match $2 with [e] -> e | l -> make_expr parseState (SEtuple l) }
-    | LPAREN Operator RPAREN                              { make_ident parseState $2 }
+    | LPAREN Operator RPAREN                          { make_ident parseState $2 }
     | LBRACKETBAR Expression_comma_list BARRBRACKET   { make_expr parseState (SEarray $2) }
     | LBRACKET Expression_comma_list RBRACKET         { List.foldBack (fun a l -> make_unop parseState "::" (make_expr parseState (SEtuple [a;l]))) $2 (make_ident parseState "[]") }
     | LBRACE Label_expr_list RBRACE                   { make_expr parseState (SErecord (None, $2)) }
@@ -423,7 +423,7 @@ Lexer_rule_args :
     | IDENT Lexer_rule_args { $1 :: $2 }
 
 Lexer_rule_case_list :
-    | Lexer_rule_case                      { [$1] }
+    | /* epsilon */                        { [] }
     | Lexer_rule_case Lexer_rule_case_list { $1 :: $2 }
 
 Lexer_rule_case :

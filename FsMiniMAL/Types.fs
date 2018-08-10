@@ -18,8 +18,9 @@ type type_id =
     | FORMAT = 8
     | REF = 9
     | EXN = 10
+    | LEXBUF = 11
 
-let mutable private type_id_top = 11
+let mutable private type_id_top = 12
 
 let type_id_new () =
     let i = type_id_top
@@ -124,6 +125,11 @@ let ti_unit = make_ti type_id.UNIT "unit" [] (Kabbrev(Ttuple []))
 let ti_string = make_ti type_id.STRING "string" [] Kbasic
 let ti_format = make_ti type_id.FORMAT "format" [tv_a; tv_b] Kbasic
 let ti_exn = make_ti type_id.EXN "exn" [] Kbasic
+let ti_lexbuf = make_ti type_id.LEXBUF "lexbuf" [] (Krecord [("source", ty_string, Immutable)
+                                                             ("start_pos", ty_int, Mutable)
+                                                             ("end_pos", ty_int, Mutable)
+                                                             ("scan_start_pos", ty_int, Mutable)
+                                                             ("eof", ty_bool, Mutable)])
 
 type tyenv =
     { types :  MultiStrMap<type_info>
@@ -407,7 +413,7 @@ let tyenv_basic, id_option, id_ref, tag_exn_Failure, tag_exn_DivisionByZero, tag
           registered_abstract_types = Dictionary()
           registered_fsharp_types = Dictionary() }
      
-    let tyenv = Array.fold add_type tyenv [| ti_int; ti_char; ti_float; ti_array; ti_bool; ti_list; ti_unit; ti_string; ti_format; ti_exn |]
+    let tyenv = Array.fold add_type tyenv [| ti_int; ti_char; ti_float; ti_array; ti_bool; ti_list; ti_unit; ti_string; ti_format; ti_exn; ti_lexbuf |]
 
     let tyenv, ids = register_fsharp_types tyenv [| ("ref", typedefof<ref<_>>); ("option", typedefof<option<_>>) |]
     let id_ref = ids.[0]

@@ -134,4 +134,6 @@ fun sort cmp a =
         merge l2 l1 t 0 l2 a 0;
       end
   end;
+
+fun lexbuf_of_string s = { source = s, start_pos = 0, end_pos = 0, scan_start_pos = 0, eof = false };
 """

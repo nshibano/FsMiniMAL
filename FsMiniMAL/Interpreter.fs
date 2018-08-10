@@ -13,6 +13,8 @@ open Typechk
 open Value
 open Stdlib
 open Translate
+open MalLex
+open System.Linq.Expressions
 
 type Tag =
     | Start = 0
@@ -263,6 +265,23 @@ type Interpreter(config : config) as this =
         | UTChide name -> message_hook (Message.Hide name)
         | UTCremove name -> message_hook (Message.Remove name)
         | UTCexn (name, _) -> message_hook (Message.ExceptionDefined name)
+        | UTClex defs ->
+            // Step 1
+            let actionss =
+                Array.map (fun (arity, ofs, alphabets, dfa, codes : code array) ->
+                    let closures = Array.zeroCreate<value> codes.Length
+                    let lexer_obj : HashSet<int> * DfaNode * value array = (alphabets, dfa, closures)
+                    let partial = Vpartial (arity, [| Vbuiltin (-1, builtin_id.LEXING); Vobj lexer_obj |])
+                    env.[ofs] <- partial
+                    (codes, closures)) defs
+            // Step 2
+            for codes, closures in actionss do
+                for i = 0 to codes.Length - 1 do
+                    match codes.[i] with
+                    | UEfn (env_size, arity, ofss_from, ofss_to, code) ->
+                        let captures = Array.map (fun i -> env.[i]) ofss_from
+                        closures.[i] <- Vclosure (arity, env_size, ofss_to, captures, code)
+                    | _ -> dontcare()
         | UTCupd (tyenv', alloc', shadowed) ->
             tyenv <- tyenv'
             alloc <- alloc'
@@ -676,6 +695,35 @@ type Interpreter(config : config) as this =
                                     frame.i <- j
                                     frame.values.[j] <- k
                                     frame.values.[j + 1] <- of_string rt s
+                        | Vbuiltin (_, builtin_id.LEXING) ->
+                            let block_get b i =
+                                match b with
+                                | Vblock (_, ary, _) -> ary.[i]
+                                | _ -> dontcare()
+                            let block_set b i x =
+                                match b with
+                                | Vblock (_, ary, _) -> ary.[i] <- x
+                                | _ -> dontcare()
+                            let alphabets, dfa, closures = match frame.values.[frame.i + 1] with Vobj o -> o :?>  HashSet<int> * DfaNode * value array | _ -> dontcare()
+                            let lexbuf = frame.values.[frame.values.Length - 1]
+                            let (source, start_pos, end_pos, scan_start_pos, eof) =
+                                match lexbuf with
+                                | Vblock (_, [| Vstring (source, _); Vint (start_pos, _); Vint (end_pos, _); Vint (scan_start_pos, _); Vint (eof, _) |], _) ->
+                                    (source, start_pos, end_pos, scan_start_pos, eof <> 0)
+                                | _ -> dontcare()
+                            if (scan_start_pos = source.Length && eof) || (scan_start_pos > source.Length) then
+                                do_raise mal_MatchFailure
+                            else
+                                match MalLex.Exec alphabets dfa source scan_start_pos with
+                                | Some (end_pos, action_idx, eof) ->
+                                    block_set lexbuf 1 (of_int dummy_runtime scan_start_pos)
+                                    block_set lexbuf 2 (of_int dummy_runtime end_pos)
+                                    block_set lexbuf 3 (of_int dummy_runtime end_pos)
+                                    block_set lexbuf 4 (of_bool eof)
+                                    frame.values.[frame.i + 1] <- closures.[action_idx]
+                                    frame.i <- frame.i + 1
+                                | None ->
+                                    do_raise mal_MatchFailure
                         | Vbuiltin (_, builtin_id.SLEEP) ->
                             state <- State.Sleeping
                             wakeup <- DateTime.UtcNow.AddSeconds(to_float(frame.values.[frame.i + 1]))

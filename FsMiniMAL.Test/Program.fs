@@ -3,6 +3,7 @@ open Printf
 
 open FsMiniMAL
 open FsMiniMAL.Value
+open System.Numerics
 
 type foobar<'a> = Foo | Bar of hogefuga<'a>
 and hogefuga<'a> = Hoge of 'a | Fuga of foobar<'a>
@@ -389,6 +390,18 @@ let main argv =
         with Failure msg -> printfn "Error(fsharp_interop): %s" msg
     
     fsharp_interop()
+
+    topcase
+        "lex { fun token =
+  ['a' - 'z']+ { Some (lexbuf.start_pos, lexbuf.end_pos) }
+  _            { token lexbuf }
+  eof          { None }};
+val lb = lexbuf_of_string \"hello world\";
+val accu = [||];
+while not lb.eof do
+    accu << token lb;
+accu"
+        "[|Some (0, 5), Some (6, 11), None|]"
 
     printfn "Done."
     //printfn "Elapsed: %d (ms)" sw.ElapsedMilliseconds

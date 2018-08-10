@@ -9,6 +9,7 @@ open FSharp.Reflection
 open Types
 open System.Text
 open System.ComponentModel
+open FsMiniMAL.MalLex
 
 let sizeof_int, sizeof_float, block_overhead, block_increment, array_overhead, array_increment, string_overhead, string_increment =
     if IntPtr.Size = 8
@@ -31,6 +32,7 @@ type builtin_id =
     | GREATER_EQUAL = 7    
     | KPRINTF = 8
     | SLEEP = 9
+    | LEXING = 10
 
 type value =
     | Vint of int * int ref
@@ -91,6 +93,7 @@ and code =
   | UTChide of string
   | UTCremove of string
   | UTCexn of string * Syntax.location
+  | UTClex of (int * int * HashSet<int> * DfaNode * code array) array // arity, offset, alphabets, dfa, actions
   | UTCupd of tyenv * Allocator * shadowed_genv_offsets : int array option
   | UTCprint_value of type_expr
   | UTCprint_new_values of (string * value_info) list

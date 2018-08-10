@@ -218,3 +218,21 @@ let Compile (defs : lex_def list) =
                 //System.Console.WriteLine(sprintf "%s %d %d %d" name alphabets.Count nfaNodeMap.Count ruleNodes.Length)
             accu.Add((perRuleData.ToArray()))
     accu.ToArray()
+
+let Exec (alphabets : HashSet<int>) (startNode : DfaNode) (s : string) (startPos : int) : (int * int * bool) option =
+    let mutable latestAccept = None
+    let rec loop node pos =
+        Option.iter (fun actionId -> latestAccept <- Some (pos, actionId, false)) node.Accepted
+        if pos < s.Length then
+            let c = int s.[pos]
+            let a = if alphabets.Contains(c) then c else Alphabet_Others
+            match node.Transitions.TryGetValue(a) with
+            | true, next -> loop next (pos + 1)
+            | false, _ -> ()
+        else
+            match node.Transitions.TryGetValue(Alphabet_Eof) with
+            | true, next ->
+                Option.iter (fun actionId -> latestAccept <- Some (pos, actionId, true)) next.Accepted
+            | false, _ -> ()
+    loop startNode startPos
+    latestAccept

@@ -8,6 +8,7 @@ open System.Collections.Immutable
 open Syntax
 open Types
 open Unify
+open FsMiniMAL.MalLex
 
 type kind =
     | Expression
@@ -964,6 +965,7 @@ type checked_command =
     | CChide of string
     | CCremove of string
     | CCexn of string * location
+    | CClex of (string * string list * HashSet<int> * DfaNode * expression array) array * (string * value_info) list
 
 let type_command_list warning_sink tyenv cmds =
     let mutable tyenv = tyenv_clone tyenv
@@ -1013,8 +1015,36 @@ let type_command_list warning_sink tyenv cmds =
                        | _ -> dontcare())
             tyenv <- tyenv'
         | { sc_desc = SClex lex_defs } ->
-            let lex = MalLex.Compile lex_defs
-            ()
+            let ruless = MalLex.Compile lex_defs
+            for rules in ruless do
+                // validate function names
+                let names = Array.map (fun (name, _, _, _, _) -> name) rules
+                Array.iter (fun name -> if is_constructor name then raise (Type_error (Invalid_identifier, cmd.sc_loc))) names
+                all_differ cmd.sc_loc kind.Function_name kind.Function_definition names
+                
+                // create tyenv with dummy binding for function names
+                let dummy_infos = List.init rules.Length (fun i -> (names.[i], { vi_type = new_tvar 1; vi_access = access.Immutable; }))
+                let tyenv_with_dummy_fun_defs = add_values tyenv dummy_infos
+
+                let new_values = List()
+                for name, args, alphabets, clauses, actions in rules do
+                    let arg_infos = (List.map (fun arg -> (arg, { vi_type = new_tvar 1; vi_access = access.Immutable; })) args) @ [("lexbuf", { vi_type = Tconstr (type_id.LEXBUF, []); vi_access = Immutable })]
+                    let tyenv_with_arg_defs = add_values tyenv_with_dummy_fun_defs arg_infos
+                    let ty_res = new_tvar 1
+                    for action in actions do
+                        let ty_action = expression warning_sink tyenv_with_arg_defs (Dictionary<string, type_expr>()) 1 None action
+                        unify_exp tyenv_with_arg_defs action ty_action ty_res
+                    let ty_fun = List.foldBack2 (fun name ty1 ty2 -> Tarrow (name, ty1, ty2)) (args @ ["lexbuf"]) (List.map (fun (_, info : value_info) -> info.vi_type) arg_infos) ty_res
+                    new_values.Add((name, ty_fun))
+                
+                let new_values = List.ofSeq new_values
+                List.iter (fun (name, ty) -> generalize 0 ty) new_values
+                List.iter2 (fun (_, dummy_info) (_, ty) -> unify_exp tyenv (let _, _, _, _, actions = rules.[0] in actions.[0]) ty dummy_info.vi_type) dummy_infos new_values
+                let new_values = List.map (fun (name, ty) -> (name, { vi_type = ty; vi_access = Immutable })) new_values
+                let tyenv' = Types.add_values tyenv new_values
+                tyenvs.Add(tyenv)
+                ccmds.Add (CClex (rules, new_values))
+                tyenv <- tyenv'
 
     tyenvs.Add(tyenv)
     (tyenvs.ToArray(), ccmds.ToArray())

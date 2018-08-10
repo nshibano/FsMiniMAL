@@ -275,5 +275,25 @@ let translate_command_list (alloc : Allocator) (tyenvs : tyenv array) (ccmds : c
         | CCexn (name, loc) ->
             tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), None))
             tcmds.Add(UTCexn(name, loc))
+        | CClex (rules, new_values) ->
+            let shadowed = find_shadowed_offsets alloc new_values
+
+            // Allocate location beforehand, to allow recursive definition.
+            let ofss = Array.map (fun (name, _, _, _, _) -> alloc.Add(name, access.Immutable)) rules
+
+            let accu = List()
+            for i = 0 to rules.Length - 1 do
+                let (name, args, alphabets, dfa, actions) = rules.[i]
+                let actions_accu = List()
+                for action in actions do
+                    let args = (List.map (fun arg -> { sp_desc = SPid arg; sp_loc = action.se_loc }) args) @ [{ sp_desc = SPid "lexbuf"; sp_loc = action.se_loc }]
+                    let ue = expression alloc ({ se_desc = SEfn (args, action); se_loc = action.se_loc })
+                    actions_accu.Add(ue)
+                accu.Add(args.Length + 1, ofss.[i], alphabets, dfa, actions_accu.ToArray())
+            
+            tcmds.Add(UTClex (accu.ToArray()))
+
+            tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), Some shadowed))
+            tcmds.Add(UTCprint_new_values new_values)
 
     alloc.EnvSize, tcmds.ToArray()
