@@ -364,21 +364,6 @@ let add_stdlib (tyenv : tyenv) (genv : value array) (alloc : Allocator) =
         array_clear rt argv.[0]
         unit
     add_func "array_clear" (arrow (ty_array a) ty_unit) 1 array_clear_func
-    
-    let random = Random()
-
-    let random_int_func (rt : runtime) argv =
-        match argv with
-        | [| Vint (n, _) |] ->
-            try
-                of_int rt (random.Next(n))
-            with :? ArgumentOutOfRangeException -> mal_failwith rt "random_int に無効な引数が与えられました"
-        | _ -> dontcare()
-    add_func "random_int" (arrow ty_int ty_int) 1 random_int_func 
-
-    let random_float_func (rt : runtime) argv =
-        of_float rt (random.NextDouble())
-    add_func "random_float" (arrow ty_unit ty_float) 1 random_float_func
 
     let ty_uu = arrow ty_unit ty_unit
     let add_uu name (func : runtime -> unit) =
