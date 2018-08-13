@@ -241,22 +241,20 @@ type Interpreter(config : config) as this =
                 captures.[k] <- env.[capture_ofs_from.[k]]
             accu <- Vclosure (captures = captures, offsets = capture_ofs_to, arity = argc, env_size = env_size, code = body )
         | UCfun defs ->
-            // Doing this in two steps because closure capture itself from env for recursive function.
-            // Step 1: create closures with dummy captures, and set it to env.
+            // Doing this in two steps because closure capture itself from env in recursive function.
+            // Step 1: create closures with captures unfilled, and set it to env.
             for ofs, fn in defs do
                 match fn with
                 | UEfn (env_size, argc, ofss_from, ofss_to, body) ->
-                    env.[ofs] <- Vclosure (captures = Array.zeroCreate<value> ofss_from.Length, // dummy
+                    env.[ofs] <- Vclosure (captures = Array.zeroCreate<value> ofss_from.Length,
                                            offsets = ofss_to,
                                            arity = argc,
                                            env_size = env_size,
                                            code = body)
                 | _ -> dontcare()
             // Step 2: fill captures.
-            for k = 0 to defs.Length - 1 do
-                let ofs, fn = defs.[k]
-                let cl = env.[ofs]
-                match fn, cl with
+            for ofs, fn in defs do
+                match fn, env.[ofs] with
                 | UEfn (_, _, ofss_from, _, _), Vclosure ( captures = captures ) ->
                     for l = 0 to ofss_from.Length - 1 do
                         captures.[l] <- env.[ofss_from.[l]]
