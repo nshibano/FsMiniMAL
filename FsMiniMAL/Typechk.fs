@@ -680,8 +680,8 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
                 else raise (Type_error(Constructor_used_with_wrong_number_of_arguments (s, ty_args.Length, el.Length), e1.se_loc))
             | _, _ -> raise (Type_error(Constructor_used_with_wrong_number_of_arguments (s, ty_args.Length, 1), e1.se_loc))
     | SEapply (({ se_desc = SEid (("+" | "-" | "*" | "/" | "~-") as op) } as e_op), el_args) when let op_arity = if op = "~-" then 1 else 2
-                                                                                                 let el_args_len = el_args.Length
-                                                                                                 op_arity - el_args_len >= 0 ->
+                                                                                                  let el_args_len = el_args.Length
+                                                                                                  op_arity - el_args_len >= 0 ->
         let op_arity = if op = "~-" then 1 else 2
         let el_args_len = el_args.Length
         let ty_float_res, ty_int_res =
@@ -965,7 +965,7 @@ type checked_command =
     | CChide of string
     | CCremove of string
     | CCexn of string * location
-    | CClex of (string * string list * HashSet<int> * DfaNode * expression array * location) array * (string * value_info) list
+    | CClex of (string * string list * HashSet<int> * DfaNode * expression array * location * value_info) array
 
 let type_command_list warning_sink tyenv cmds =
     let mutable tyenv = tyenv_clone tyenv
@@ -1023,11 +1023,11 @@ let type_command_list warning_sink tyenv cmds =
                 all_differ cmd.sc_loc kind.Function_name kind.Function_definition names
                 
                 // create tyenv with dummy binding for function names
-                let dummy_infos = List.init rules.Length (fun i -> (names.[i], { vi_type = new_tvar 1; vi_access = access.Immutable; }))
+                let dummy_infos = Array.map (fun name -> (name, { vi_type = new_tvar 1; vi_access = access.Immutable; })) names
                 let tyenv_with_dummy_fun_defs = add_values tyenv dummy_infos
 
                 let new_values = List()
-                for name, args, alphabets, clauses, actions, loc in rules do
+                for name, args, _, _, actions, _ in rules do
                     let arg_infos = (List.map (fun arg -> (arg, { vi_type = new_tvar 1; vi_access = access.Immutable; })) args) @ [("lexbuf", { vi_type = Tconstr (type_id.LEXBUF, []); vi_access = Immutable })]
                     let tyenv_with_arg_defs = add_values tyenv_with_dummy_fun_defs arg_infos
                     let ty_res = new_tvar 1
@@ -1036,20 +1036,23 @@ let type_command_list warning_sink tyenv cmds =
                         unify_exp tyenv_with_arg_defs action ty_action ty_res
                     let ty_fun = List.foldBack2 (fun name ty1 ty2 -> Tarrow (name, ty1, ty2)) (args @ ["lexbuf"]) (List.map (fun (_, info : value_info) -> info.vi_type) arg_infos) ty_res
                     new_values.Add((name, ty_fun))
-                
-                let new_values = List.ofSeq new_values
-                List.iter (fun (name, ty) -> generalize 0 ty) new_values
-                let mutable i = 0
-                List.iter2 (fun (_, dummy_info) (_, ty) ->
+                let new_values = new_values.ToArray()
+                Array.iter (fun (_, ty) -> generalize 0 ty) new_values
+                for i = 0 to rules.Length - 1 do
+                    let _, dummy_info = dummy_infos.[i]
+                    let _, ty = new_values.[i]
                     let _, _, _, _, _, loc = rules.[i]
                     let ty_expected = dummy_info.vi_type
                     try unify tyenv ty ty_expected
                     with Unify -> raise (Type_error (Type_mismatch (tyenv, Expression, ty, ty_expected), loc))
-                    i <- i + 1) dummy_infos new_values
-                let new_values = List.map (fun (name, ty) -> (name, { vi_type = ty; vi_access = Immutable })) new_values
+                let new_values = Array.map (fun (name, ty) -> (name, { vi_type = ty; vi_access = Immutable })) new_values
                 let tyenv' = Types.add_values tyenv new_values
                 tyenvs.Add(tyenv)
-                ccmds.Add (CClex (rules, new_values))
+                let result = Array.init rules.Length (fun i ->
+                    let name, args, alphabets, dfa, actions, loc = rules.[i]
+                    let _, value_info = new_values.[i]
+                    (name, args, alphabets, dfa, actions, loc, value_info))
+                ccmds.Add (CClex result)
                 tyenv <- tyenv'
 
     tyenvs.Add(tyenv)

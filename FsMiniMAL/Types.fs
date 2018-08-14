@@ -234,12 +234,12 @@ let add_value (tyenv : tyenv) name info =
         values_typeexpr_mutable = tyenv.values_typeexpr_mutable.SetItem(name, info)
         values_typeexpr_immutable = tyenv.values_typeexpr_immutable.Remove(name) }
 
-let add_values (tyenv : tyenv) (new_values : (string * value_info) list) =
+let add_values (tyenv : tyenv) (new_values : (string * value_info) seq) =
     let accu_mutable = tyenv.values_typeexpr_mutable.ToBuilder()
     let accu_immutable = tyenv.values_typeexpr_immutable.ToBuilder()
-    List.iter (fun (name, info) ->
+    for (name, info) in new_values do
         accu_mutable.[name] <- info
-        accu_immutable.Remove(name) |> ignore) new_values
+        accu_immutable.Remove(name) |> ignore
     { tyenv with
         values_typeexpr_mutable = accu_mutable.ToImmutable()
         values_typeexpr_immutable = accu_immutable.ToImmutable() }
