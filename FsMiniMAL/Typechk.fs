@@ -1024,7 +1024,8 @@ let type_command_list warning_sink tyenv cmds =
                 let tyenv_with_dummy_fun_defs = add_values tyenv dummy_infos
 
                 let new_values = List()
-                for name, args, _, _, actions, _ in rules do
+                for name, args, _, _, actions, loc in rules do
+                    all_differ loc kind.Variable_name kind.Function_definition args
                     let arg_infos = (List.map (fun arg -> (arg, { vi_type = new_tvar 1; vi_access = access.Immutable; })) args) @ [("lexbuf", { vi_type = Tconstr (type_id.LEXBUF, []); vi_access = Immutable })]
                     let tyenv_with_arg_defs = add_values tyenv_with_dummy_fun_defs arg_infos
                     let ty_res = new_tvar 1
