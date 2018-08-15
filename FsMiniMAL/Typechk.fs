@@ -970,51 +970,48 @@ type checked_command =
 let type_command_list warning_sink tyenv cmds =
     let mutable tyenv = tyenv_clone tyenv
     let tyenvs = ResizeArray()
-    let ccmds = ResizeArray()
+    //let ccmds = ResizeArray()
     for cmd in cmds do
-        match cmd with
-        | { sc_desc = SCtype dl } ->
+        match cmd.sc_desc with
+        | SCtype dl ->
             let tyenv' = add_typedef tyenv cmd.sc_loc dl
             tyenvs.Add(tyenv)
-            ccmds.Add (CCtype (dl, cmd.sc_loc))
             tyenv <- tyenv'
-        | { sc_desc = SChide name } -> 
+        | SChide name -> 
             let tyenv' = hide_type tyenv name cmd.sc_loc
             tyenvs.Add(tyenv)
-            ccmds.Add (CChide name)
             tyenv <- tyenv'
-        | { sc_desc = SCremove name } ->
+        | SCremove name ->
             if Option.isSome (try_get_value tyenv name) then
                 let tyenv' =
                     { tyenv with
                         values_typeexpr_immutable = tyenv.values_typeexpr_immutable.Remove(name)
                         values_typeexpr_mutable = tyenv.values_typeexpr_mutable.Remove(name) }
                 tyenvs.Add(tyenv')
-                ccmds.Add(CCremove name)
                 tyenv <- tyenv'
             else raise (Type_error ((Unbound_identifier name), cmd.sc_loc))
-        | { sc_desc = SCexn (name, tyl) } ->
+        | SCexn (name, tyl) ->
             if not (Char.IsUpper name.[0]) then raise (Type_error (Must_start_with_uppercase Exception_name, cmd.sc_loc))
             let tyl = List.map (type_expr tyenv None (Dictionary<string, type_expr>())) tyl
             let tyenv', _ = add_exn_constructor tyenv name tyl
             tyenvs.Add(tyenv)
-            ccmds.Add (CCexn (name, cmd.sc_loc))
             tyenv <- tyenv'
-        | { sc_desc = SCexpr e } ->
+        | SCexpr e ->
             let ty = type_expression warning_sink tyenv e
             tyenvs.Add(tyenv)
-            ccmds.Add (CCexpr (e, ty, cmd.sc_loc))
-        | { sc_desc = (SCval _ | SCvar _ | SCfun _) } as cmd ->
+            cmd.sc_desc <- SCCexpr (e, ty)
+        | (SCval _ | SCvar _ | SCfun _) ->
             let new_values = type_command warning_sink tyenv cmd
             let tyenv' = Types.add_values tyenv new_values
             tyenvs.Add(tyenv)
-            ccmds.Add (match cmd.sc_desc with
-                       | SCval l -> (CCval (l, new_values, cmd.sc_loc))
-                       | SCvar l -> (CCvar (l, new_values, cmd.sc_loc))
-                       | SCfun l -> (CCfun (l, new_values, cmd.sc_loc))
+            cmd.sc_desc <- 
+                      (match cmd.sc_desc with
+                       | SCval l -> (SCCval (l, new_values))
+                       | SCvar l -> (SCCvar (l, new_values))
+                       | SCfun l -> (SCCfun (l, new_values))
                        | _ -> dontcare())
             tyenv <- tyenv'
-        | { sc_desc = SClex lex_defs } ->
+        | SClex lex_defs ->
             let ruless = MalLex.Compile lex_defs
             for rules in ruless do
                 // validate function names
@@ -1052,8 +1049,8 @@ let type_command_list warning_sink tyenv cmds =
                     let name, args, alphabets, dfa, actions, loc = rules.[i]
                     let _, value_info = new_values.[i]
                     (name, args, alphabets, dfa, actions, loc, value_info))
-                ccmds.Add (CClex result)
+                cmd.sc_desc <- SCClex result
                 tyenv <- tyenv'
 
     tyenvs.Add(tyenv)
-    (tyenvs.ToArray(), ccmds.ToArray())
+    tyenvs.ToArray()

@@ -14,10 +14,10 @@ type NfaNode =
       Transitions : MultiMap<int, NfaNode>
       Accepted : int option }
 
-type DfaNode = 
-    { Id : int
-      Transitions : Dictionary<int, DfaNode>
-      Accepted : int option }
+//type DfaNode = 
+//    { Id : int
+//      Transitions : Dictionary<int, DfaNode>
+//      Accepted : int option }
 
 let AddToMultiMap (map : MultiMap<'a, 'b>) (a : 'a) (b : 'b) =
     match map.TryGetValue a with
@@ -149,7 +149,7 @@ let NfaToDfa (nfaNodeMap : NfaNodeMap) (nfaStartNode : NfaNode) =
         | true, dfaNode -> dfaNode
         | false, _ ->
             let dfaNode =
-                { Id = dfaNodes.Count
+                { DfaNode.Id = dfaNodes.Count
                   Transitions = Dictionary()
                   Accepted = array_chooseFirst (fun nid -> nfaNodeMap.[nid].Accepted) nfaSet }
             dfaNodes.[nfaSet] <- dfaNode
@@ -221,7 +221,7 @@ let Compile (defs : lex_def list) =
 
 let Exec (alphabets : HashSet<int>) (startNode : DfaNode) (s : string) (startPos : int) : (int * int * bool) option =
     let mutable latestAccept = None
-    let rec loop node pos =
+    let rec loop (node : DfaNode) pos =
         Option.iter (fun actionId -> latestAccept <- Some (pos, actionId, false)) node.Accepted
         if pos < s.Length then
             let c = int s.[pos]

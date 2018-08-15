@@ -17,15 +17,15 @@
     <Compile Include="Parsing.fs" />
     <Compile Include="Misc.fs" />
     <Compile Include="PrintfFormat.fs" />
+    <Compile Include="Types.fs" />
     <Compile Include="Syntax.fs" />
+    <Compile Include="MalLex.fs" />
     <Compile Include="ParseHelper.fs" />
     <Compile Include="Parser.fsi" />
     <Compile Include="Parser.fs" />
     <Compile Include="LexHelper.fs" />
     <Compile Include="Lexer.fs" />
-    <Compile Include="Types.fs" />
     <Compile Include="Unify.fs" />
-    <Compile Include="MalLex.fs" />
     <Compile Include="Typechk.fs" />
     <Compile Include="Allocator.fs" />
     <Compile Include="Value.fs" />

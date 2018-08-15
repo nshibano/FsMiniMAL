@@ -224,7 +224,7 @@ and expression (alloc : Allocator) (se : Syntax.expression) : Value.code =
     alloc.Locals <- locals_at_start
     ue
 
-let translate_command_list (alloc : Allocator) (tyenvs : tyenv array) (ccmds : checked_command array) =
+let translate_command_list (alloc : Allocator) (tyenvs : tyenv array) (ccmds : command array) =
     let mutable alloc = alloc.Clone()
     let tcmds = ResizeArray()
 
@@ -238,44 +238,45 @@ let translate_command_list (alloc : Allocator) (tyenvs : tyenv array) (ccmds : c
 
     tcmds.Add(UTCupd (tyenvs.[0], alloc.Clone(), None))
     for i = 0 to ccmds.Length - 1 do
-        match ccmds.[i] with
-        | CCexpr (e, ty, loc) ->
+        let cmd = ccmds.[i]
+        match cmd.sc_desc with
+        | SCCexpr (e, ty) ->
             let ue = expression alloc e
             tcmds.Add(ue)
             tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), None))
             tcmds.Add(UTCprint_value ty)
-        | CCval (l, new_values, loc) ->
+        | SCCval (l, new_values) ->
             let shadowed = find_shadowed_offsets alloc new_values
-            let uc = command alloc { sc_desc = SCval l; sc_loc = loc }
+            let uc = command alloc { sc_desc = SCval l; sc_loc = cmd.sc_loc }
             tcmds.Add(uc)
             tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), Some shadowed))
             tcmds.Add(UTCprint_new_values new_values)
-        | CCvar (l, new_values, loc) ->
+        | SCCvar (l, new_values) ->
             let shadowed = find_shadowed_offsets alloc new_values
-            let uc = command alloc { sc_desc = SCvar l; sc_loc = loc }
+            let uc = command alloc { sc_desc = SCvar l; sc_loc = cmd.sc_loc }
             tcmds.Add(uc)
             tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), Some shadowed))
             tcmds.Add(UTCprint_new_values new_values)
-        | CCfun (l, new_values, loc) ->
+        | SCCfun (l, new_values) ->
             let shadowed = find_shadowed_offsets alloc new_values
-            let uc = command alloc { sc_desc = SCfun l; sc_loc = loc }
+            let uc = command alloc { sc_desc = SCfun l; sc_loc = cmd.sc_loc }
             tcmds.Add(uc)
             tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), Some shadowed))
             tcmds.Add(UTCprint_new_values new_values)
-        | CCtype (defs, loc) ->
+        | SCtype defs ->
             tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), None))
-            tcmds.Add(UTCtype(defs, loc))
-        | CChide name ->
+            tcmds.Add(UTCtype(defs, cmd.sc_loc))
+        | SChide name ->
             tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), None))
             tcmds.Add(UTChide name)
-        | CCremove name ->
+        | SCremove name ->
             let ofs, _ = alloc.Get(name)
             tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), Some [| ofs |]))
             tcmds.Add(UTCremove name)
-        | CCexn (name, loc) ->
+        | SCexn (name, loc) ->
             tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), None))
-            tcmds.Add(UTCexn(name, loc))
-        | CClex rules ->
+            tcmds.Add(UTCexn(name, cmd.sc_loc))
+        | SCClex rules ->
             let new_values = List.init rules.Length (fun i ->
                 let (name, _, _, _, _, _, vi) = rules.[i]
                 (name, vi))

@@ -1,6 +1,7 @@
 ﻿module FsMiniMAL.Syntax
 
-open System.Numerics
+open System.Collections.Generic
+
 open FsMiniMAL.Lexing
 
 type location = { src : string; st : Position; ed : Position }
@@ -64,6 +65,11 @@ let Alphabet_Epsilon = -1
 let Alphabet_Eof = -2
 let Alphabet_Others = -3
 
+type DfaNode = 
+    { Id : int
+      Transitions : Dictionary<int, DfaNode>
+      Accepted : int option }
+
 type expression = 
     { mutable se_desc : expression_desc
       se_loc : location }
@@ -98,7 +104,7 @@ and expression_desc =
     | SEformat of PrintfFormat.PrintfCommand list
 
 and command = 
-    { sc_desc : command_desc
+    { mutable sc_desc : command_desc
       sc_loc : location }
 
 and command_desc = 
@@ -111,6 +117,12 @@ and command_desc =
     | SCremove of string
     | SCexn of string * type_expr list
     | SClex of lex_def list
+    // after typecheck only
+    | SCCexpr of expression * Types.type_expr
+    | SCCval of (pattern * expression) list * (string * Types.value_info) list
+    | SCCfun of (string * expression) list * (string * Types.value_info) list
+    | SCCvar of (string * expression) list * (string * Types.value_info) list
+    | SCClex of (string * string list * HashSet<int> * DfaNode * expression array * location * Types.value_info) array
 
 and lex_def =
     | Macro_def of string * regexp
