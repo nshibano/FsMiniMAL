@@ -57,6 +57,7 @@ type type_error_desc =
     | Not_mutable of kind * string
     | This_expression_is_not_a_record
     | Already_abstract of string
+    | Basic_types_cannot_be_hidden
     // Warnings
     | Partially_applied
     | Useless_with_clause
@@ -258,12 +259,15 @@ let add_typedef tyenv loc dl =
 let hide_type (tyenv : tyenv) name loc =
         match tyenv.types.TryFind(name) with
         | Some info ->
+            let id = match info.ti_res with Tconstr (id, _) -> id | _ -> dontcare()
+            if id <= id_option then
+                raise (Type_error (Basic_types_cannot_be_hidden, loc))
             match info.ti_kind with
             | Kbasic -> raise (Type_error (Already_abstract name, loc))
-            | _ -> ()
-            let tyenv = remove_type tyenv info
-            let info = { info with ti_kind = Kbasic }
-            add_type tyenv info
+            | _ ->
+                let tyenv = remove_type tyenv info
+                let info = { info with ti_kind = Kbasic }
+                add_type tyenv info
         | None -> raise (Type_error (Undefined_type_constructor name, loc))
 
 /// Copy the type expression. When generic level type var is found, replace it with newly created type var at current level.

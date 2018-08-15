@@ -556,6 +556,7 @@ let print_typechk_error lang cols desc =
         | Partially_applied -> "Beware, this function is partially applied."
         | Useless_with_clause -> "All the fields are explicitly listed in this record: the 'with' clause is useless."
         | Already_abstract name -> sprintf "Type %s is already abstract." name
+        | Basic_types_cannot_be_hidden -> "Basic types cannot be hidden."
 
     | Ja ->
         match desc with
@@ -620,3 +621,4 @@ let print_typechk_error lang cols desc =
         | Partially_applied -> "この式は部分適用されています。ご注意ください。"
         | Useless_with_clause -> "全てのフィールドが明示的に与えられているため、 with 節は不要です。"
         | Already_abstract name -> sprintf "型 %s は既に抽象型です。" name
+        | Basic_types_cannot_be_hidden -> "基本型は隠蔽できません。"

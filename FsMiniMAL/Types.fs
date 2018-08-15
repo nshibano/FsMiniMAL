@@ -401,7 +401,7 @@ let register_fsharp_types tyenv (types : (string * Type) array) =
     let ids = Array.map (fun (_, _, id) -> id) types
     tyenv, ids
 
-let tyenv_basic, id_option, id_ref, tag_exn_Failure, tag_exn_DivisionByZero, tag_exn_IndexOutOfRange, tag_exn_MatchFailure =
+let tyenv_basic, id_ref, id_option, tag_exn_Failure, tag_exn_DivisionByZero, tag_exn_IndexOutOfRange, tag_exn_MatchFailure =
     let tyenv =
         { tyenv.types =  MultiStrMap.Empty
           types_of_id = Map.empty
@@ -424,4 +424,4 @@ let tyenv_basic, id_option, id_ref, tag_exn_Failure, tag_exn_DivisionByZero, tag
     let tyenv, tag_exn_IndexOutOfRange = add_exn_constructor tyenv "IndexOutOfRange" []
     let tyenv, tag_exn_MatchFailure = add_exn_constructor tyenv "MatchFailure" []
 
-    tyenv, id_option, id_ref, tag_exn_Failure, tag_exn_DivisionByZero, tag_exn_IndexOutOfRange, tag_exn_MatchFailure
+    tyenv, id_ref, id_option, tag_exn_Failure, tag_exn_DivisionByZero, tag_exn_IndexOutOfRange, tag_exn_MatchFailure
