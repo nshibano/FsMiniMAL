@@ -386,6 +386,7 @@ Lexer_def :
 Lexer_regexp_1 :
     | Lexer_regexp_1 BAR Lexer_regexp_2 { Alt [$1;$3]  }
     | Lexer_regexp_2                    { $1 }
+    | /* epsilon */                     { Seq [] }
 
 Lexer_regexp_2 :
     | Lexer_regexp_2 Lexer_regexp_3 { Seq [$1; $2] }
