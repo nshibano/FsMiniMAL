@@ -256,8 +256,8 @@ let translate_command_list (alloc : Allocator) (tyenvs : tyenv array) (ccmds : c
             let uc = command alloc { sc_desc = SCfun l; sc_loc = cmd.sc_loc }
             tcmds.Add(UTCvalvarfun (uc, tyenvs.[i+1], alloc.Clone(), shadowed, new_values))
         | SCtype defs ->
-            tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), None))
-            tcmds.Add(UTCtype(defs, cmd.sc_loc))
+            let names = List.map (fun (td : typedef) -> td.sd_name) defs
+            tcmds.Add(UTCtype(names, tyenvs.[i+1]))
         | SChide name ->
             tcmds.Add(UTChide (name, tyenvs.[i+1], alloc.Clone()))
         | SCremove name ->

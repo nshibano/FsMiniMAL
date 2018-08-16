@@ -91,7 +91,7 @@ type Message =
     | TypeError of Typechk.type_error_desc * location
     | EvaluationComplete of tyenv * type_expr * value
     | NewValues of tyenv * (string * value * value_info) list 
-    | TypeDefined of Syntax.typedef list
+    | TypeDefined of string list
     | ExceptionDefined of string
     | Hide of string
     | Remove of string
@@ -186,7 +186,7 @@ type Interpreter(config : config) as this =
                 sb.Add (Printer.print_definition tyenv 80 name info value)
                 sb.Add("\r\n")
             rt.print_string (sb.ToString())
-        | Message.TypeDefined defs -> List.iter (fun def -> rt.print_string (sprintf "Type %s defined.\r\n" def.sd_name)) defs
+        | Message.TypeDefined names -> List.iter (fun name -> rt.print_string (sprintf "Type %s defined.\r\n" name)) names
         | Message.ExceptionDefined name -> rt.print_string (sprintf "Exception %s is defined.\r\n" name)
         | Message.Hide name -> rt.print_string (sprintf "Type %s is now abstract.\r\n" name)
         | Message.Remove name -> rt.print_string (sprintf "Value %s has been removed.\r\n" name)

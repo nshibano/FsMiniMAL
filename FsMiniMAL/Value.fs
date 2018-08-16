@@ -91,7 +91,7 @@ and code =
   // toplevel commands
   | UTCexpr of code * tyenv * Allocator * type_expr
   | UTCvalvarfun of code * tyenv * Allocator * int array * (string * value_info) list
-  | UTCtype of Syntax.typedef list * Syntax.location
+  | UTCtype of string list * tyenv
   | UTChide of string * tyenv * Allocator
   | UTCremove of string * int * tyenv * Allocator
   | UTCexn of string * tyenv * Allocator
