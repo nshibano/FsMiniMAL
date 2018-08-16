@@ -961,17 +961,6 @@ let tyenv_clone (tyenv : tyenv) =
         values_typeexpr_immutable = accu_immutable.ToImmutable()
         values_typeexpr_mutable = accu_mutable.ToImmutable() }
 
-type checked_command = 
-    | CCexpr of expression * type_expr * location
-    | CCval of (pattern * expression) list * (string * value_info) list * location
-    | CCfun of (string * expression) list * (string * value_info) list * location
-    | CCvar of (string * expression) list * (string * value_info) list * location
-    | CCtype of typedef list * location
-    | CChide of string
-    | CCremove of string
-    | CCexn of string * location
-    | CClex of (string * string list * HashSet<int> * DfaNode * expression array * location * value_info) array
-
 let type_command_list warning_sink tyenv cmds =
     let mutable tyenv = tyenv_clone tyenv
     let tyenvs = ResizeArray()
