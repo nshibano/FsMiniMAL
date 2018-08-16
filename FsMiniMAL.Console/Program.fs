@@ -58,13 +58,13 @@ let main argv =
         while
             lock mal (fun () ->
                 if mal.IsRunning then
-                    if mal.State = State.Sleeping && DateTime.UtcNow < mal.Wakeup then
+                    if mal.IsSleeping && DateTime.UtcNow < mal.Wakeup then
                         Thread.Sleep(100)
                     else
                         mal.Run(1000L)
                     true
                 else
-                    if mal.State = State.StoppedDueToError then
+                    if mal.State = State.Failure then
                         Console.Write(mal.StringOfError(lang, 80, mal.Error))
                     false) do ()
     0

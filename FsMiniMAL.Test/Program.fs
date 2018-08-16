@@ -15,7 +15,7 @@ let main argv =
         let mal = Interpreter()
         mal.Do (source)
         match mal.State with
-        | State.Finished ->
+        | State.Success ->
             let value, ty = mal.Result
             let result = Printer.print_value_without_type mal.TypeEnv 10000 ty value
             if result = answer then
@@ -24,7 +24,7 @@ let main argv =
                 printfn "Test failed."
                 printfn "Source: %s" source
                 printfn "Expected %s but %s." answer result
-        | State.StoppedDueToError ->
+        | State.Failure ->
             printfn "Test failed (mal error)."
             printfn "Source: %s" source
         | State.Running ->
@@ -39,7 +39,7 @@ let main argv =
     let type_error source = 
         let mal = Interpreter()
         try mal.Do (source) with _ -> ()
-        if mal.State = State.StoppedDueToError && (match mal.Error with Error.TypeError _ -> true | _ -> false) then
+        if mal.State = State.Failure && (match mal.Error with Error.TypeError _ -> true | _ -> false) then
             ()
         else
             printfn "Test failed. (expected type error)"
@@ -49,7 +49,7 @@ let main argv =
         let mal = Interpreter({ FsMiniMAL.Value.config.Default with maximum_stack_depth = 1000; bytes_trigger_gc = 20000; bytes_stop_exec = 10000 })
         try
             mal.Do (source)
-            if mal.State = State.Finished then
+            if mal.State = State.Success then
                 printfn "Test failed. Should fail safely but succeeded."
                 printfn "Source: %s" source
         with exn ->

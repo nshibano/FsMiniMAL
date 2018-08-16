@@ -80,9 +80,8 @@ type ValVarFrame = { mutable pc : Tag; mutable i : int }
 
 type State =
     | Running = 0
-    | Sleeping = 1
-    | Finished = 2
-    | StoppedDueToError = 3
+    | Success = 1
+    | Failure = 2
 
 type Message =
     | TypeError of Typechk.type_error_desc * location
@@ -104,7 +103,8 @@ type Error =
 
 type Interpreter(config : config) as this =
 
-    let mutable state = State.Finished
+    let mutable state = State.Success
+    let mutable isSleeping = false
     let mutable accu : value = unit
     let mutable env : value array = Array.copy genv_std
     let mutable stack = Array.zeroCreate<Frame> 16
@@ -218,7 +218,8 @@ type Interpreter(config : config) as this =
         stack_topidx <- stack_topidx - 1
         
     let cancel() =
-        state <- State.Finished
+        state <- State.Success
+        isSleeping <- false
         accu <- Value.unit
         result <- (Value.unit, ty_unit)
         error <-  Unchecked.defaultof<Error>
@@ -383,7 +384,7 @@ type Interpreter(config : config) as this =
         cancel()
         match parse src with
         | Error err ->
-            state <- State.StoppedDueToError
+            state <- State.Failure
             error <- err
         | Ok cmds ->
 
@@ -393,13 +394,13 @@ type Interpreter(config : config) as this =
 
             match attempt (Typechk.type_command_list warning_sink tyenv) cmds with
             | Error (Type_error (err, loc)) ->
-                state <- State.StoppedDueToError
+                state <- State.Failure
                 error <- Error.TypeError (err, loc)
             | Error x -> dontcare()
             | Ok tyenvs ->
                 let genv_size, tcmds = Translate.translate_top_command_list alloc tyenvs (Array.ofList cmds)
                 if genv_size > config.maximum_array_length then
-                    state <- State.StoppedDueToError
+                    state <- State.Failure
                     error <- EnvSizeLimit
                 else
                     env <- array_ensure_capacity_exn config.maximum_array_length genv_size env
@@ -470,11 +471,11 @@ type Interpreter(config : config) as this =
             start_code catch
         | None ->
             error <- Error.UncaughtException exn_value
-            state <- State.StoppedDueToError
+            state <- State.Failure
 
     let run (slice_ticks : int64) =
         
-        if state = State.Sleeping then state <- State.Running
+        isSleeping <- false
         rt.timestamp_at_start <- Stopwatch.GetTimestamp()
         
         while state = State.Running && (Stopwatch.GetTimestamp() - rt.timestamp_at_start) < slice_ticks do
@@ -511,7 +512,7 @@ type Interpreter(config : config) as this =
                                 false
                             | Value.InsufficientMemory as e ->
                                 error <- Error.MALInsufficientMemory
-                                state <- State.StoppedDueToError
+                                state <- State.Failure
                                 false
                     if cont then
                         if fields.Length = 0 then
@@ -739,7 +740,7 @@ type Interpreter(config : config) as this =
                                 | None ->
                                     do_raise mal_MatchFailure
                         | Vbuiltin (_, builtin_id.SLEEP) ->
-                            state <- State.Sleeping
+                            isSleeping <- true
                             wakeup <- DateTime.UtcNow.AddSeconds(to_float(frame.values.[frame.i + 1]))
                             accu <- unit
                             stack_discard_top()
@@ -761,7 +762,7 @@ type Interpreter(config : config) as this =
                                 | MALException v -> do_raise v
                                 | Value.InsufficientMemory ->
                                     error <- Error.MALInsufficientMemory
-                                    state <- State.StoppedDueToError
+                                    state <- State.Failure
                                 | _ -> raise e
                         | Vclosure (arity = arity; env_size = env_size; captures = captures; offsets = offsets; code = code) ->
                             // Start evaluation of the closure
@@ -996,12 +997,12 @@ type Interpreter(config : config) as this =
 
             if state = State.Running then
                 if stack_topidx + 1 = 0 then
-                    state <- State.Finished
+                    state <- State.Success
                 elif stack_topidx + 1 >= config.maximum_stack_depth then
-                    state <- State.StoppedDueToError
+                    state <- State.Failure
                     error <- Error.MALStackOverflow
                 elif not (check_free_memory rt 0) then
-                    state <- State.StoppedDueToError
+                    state <- State.Failure
                     error <- Error.MALInsufficientMemory
 
             rt.cycles <- rt.cycles + 1L
@@ -1026,7 +1027,7 @@ type Interpreter(config : config) as this =
     do
         start Prelude.prelude
         run Int64.MaxValue
-        if state <> State.Finished then dontcare()
+        if state <> State.Success then dontcare()
         alias_exn "@" "list_append"
         alias_exn "!" "ref_get"
         alias_exn ":=" "ref_set"
@@ -1045,14 +1046,8 @@ type Interpreter(config : config) as this =
     member this.Runtime = rt
     member this.Cancel() = cancel()
     member this.StringOfError(lang, cols, err) = string_of_error lang cols err
-
-    /// Returns true when interpreter state is Running or Sleeping.
-    member this.IsRunning
-        with get() =
-            match state with
-            | State.Running 
-            | State.Sleeping -> true 
-            | _ -> false
+    member this.IsRunning = state = State.Running
+    member this.IsSleeping = isSleeping
     
     /// Internally calls Cancel()    
     member this.Start(s) = start s
