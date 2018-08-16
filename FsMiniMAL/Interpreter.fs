@@ -104,7 +104,6 @@ type Error =
 type Interpreter(config : config) as this =
 
     let mutable state = State.Success
-    let mutable isSleeping = false
     let mutable accu : value = unit
     let mutable env : value array = Array.copy genv_std
     let mutable stack = Array.zeroCreate<Frame> 16
@@ -113,6 +112,7 @@ type Interpreter(config : config) as this =
     let mutable alloc = alloc_std.Clone()
     let mutable cols = 80
     let mutable error : Error = Unchecked.defaultof<Error>
+    let mutable isSleeping = false
     let mutable wakeup  = DateTime.MinValue
     let mutable result = (unit, ty_unit)
     let rt =
@@ -228,8 +228,8 @@ type Interpreter(config : config) as this =
             stack_discard_top()
 
     let print_value ty =
-        result <- (this.Accu, ty)
-        message_hook (Message.EvaluationComplete (tyenv, ty, this.Accu))
+        result <- (accu, ty)
+        message_hook (Message.EvaluationComplete (tyenv, ty, accu))
 
     let print_new_values new_values = 
         let new_values = List.map (fun (name, info) ->
