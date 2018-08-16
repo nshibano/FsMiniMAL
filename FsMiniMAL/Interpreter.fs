@@ -101,7 +101,7 @@ type Error =
     | MALStackOverflow
     | EnvSizeLimit
 
-type Interpreter(config : config) as this =
+type Interpreter(config : config) =
 
     let mutable state = State.Success
     let mutable accu : value = unit

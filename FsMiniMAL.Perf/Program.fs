@@ -180,7 +180,7 @@ fun aatree n =
     
     let help () =
         printfn "> Enter 'r' or empty line to run test again with default repeat parameter (=%d)." default_repeat
-        printfn "> Enter 'r <repeat>' to run test with manual repeat parameter."
+        printfn "> Enter 'r <repeat>' to run test with manually set repeat parameter."
         printfn "> Enter 'C' to copy best data to ref data."
         printfn "> Enter 'd' to delete best data."
         printfn "> Enter 'D' to delete ref data."
@@ -191,7 +191,7 @@ fun aatree n =
 
     printfn ""
 
-    help ()
+    help()
     printf "# "
     let mutable cmd = Console.ReadLine()
     while not (cmd.StartsWith("q")) do
@@ -207,7 +207,7 @@ fun aatree n =
                 File.Copy(path_best, path_ref, true)
                 printfn "> The best data file (%s) has been copied to ref data path (%s)" path_best path_ref
             else
-                printfn "> The best data doesn't exist."
+                printfn "> The best data file doesn't exist."
         | [| "d" |] ->
             File.Delete(path_best)
             printfn "> The best data file (%s) has been removed." path_best
