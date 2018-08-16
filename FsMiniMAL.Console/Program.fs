@@ -58,7 +58,7 @@ let main argv =
         while
             lock mal (fun () ->
                 if mal.IsRunning then
-                    if mal.IsSleeping && DateTime.UtcNow < mal.Wakeup then
+                    if mal.IsSleeping && DateTime.Now < mal.Wakeup then
                         Thread.Sleep(100)
                     else
                         mal.Run(1000L)

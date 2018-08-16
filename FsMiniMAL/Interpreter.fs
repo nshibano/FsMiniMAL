@@ -478,7 +478,7 @@ type Interpreter(config : config) as this =
         isSleeping <- false
         rt.timestamp_at_start <- Stopwatch.GetTimestamp()
         
-        while state = State.Running && (Stopwatch.GetTimestamp() - rt.timestamp_at_start) < slice_ticks do
+        while state = State.Running && (not isSleeping) && (Stopwatch.GetTimestamp() - rt.timestamp_at_start) < slice_ticks do
             let code = stack.[stack_topidx].code
             let frame = stack.[stack_topidx].frame
             match code with
@@ -741,7 +741,7 @@ type Interpreter(config : config) as this =
                                     do_raise mal_MatchFailure
                         | Vbuiltin (_, builtin_id.SLEEP) ->
                             isSleeping <- true
-                            wakeup <- DateTime.UtcNow.AddSeconds(to_float(frame.values.[frame.i + 1]))
+                            wakeup <- DateTime.Now.AddSeconds(to_float(frame.values.[frame.i + 1]))
                             accu <- unit
                             stack_discard_top()
                         | Vfunc (arity, f) ->
