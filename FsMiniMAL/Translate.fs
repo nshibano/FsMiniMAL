@@ -246,21 +246,15 @@ let translate_command_list (alloc : Allocator) (tyenvs : tyenv array) (ccmds : c
         | SCCval (l, new_values) ->
             let shadowed = find_shadowed_offsets alloc new_values
             let uc = command alloc { sc_desc = SCval l; sc_loc = cmd.sc_loc }
-            tcmds.Add(uc)
-            tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), Some shadowed))
-            tcmds.Add(UTCprint_new_values new_values)
+            tcmds.Add(UTCvalvarfun (uc, tyenvs.[i+1], alloc.Clone(), shadowed, new_values))
         | SCCvar (l, new_values) ->
             let shadowed = find_shadowed_offsets alloc new_values
             let uc = command alloc { sc_desc = SCvar l; sc_loc = cmd.sc_loc }
-            tcmds.Add(uc)
-            tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), Some shadowed))
-            tcmds.Add(UTCprint_new_values new_values)
+            tcmds.Add(UTCvalvarfun (uc, tyenvs.[i+1], alloc.Clone(), shadowed, new_values))
         | SCCfun (l, new_values) ->
             let shadowed = find_shadowed_offsets alloc new_values
             let uc = command alloc { sc_desc = SCfun l; sc_loc = cmd.sc_loc }
-            tcmds.Add(uc)
-            tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), Some shadowed))
-            tcmds.Add(UTCprint_new_values new_values)
+            tcmds.Add(UTCvalvarfun (uc, tyenvs.[i+1], alloc.Clone(), shadowed, new_values))
         | SCtype defs ->
             tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), None))
             tcmds.Add(UTCtype(defs, cmd.sc_loc))

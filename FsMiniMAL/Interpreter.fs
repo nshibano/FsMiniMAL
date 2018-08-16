@@ -63,6 +63,8 @@ type Tag =
 
     | TopExpr_Eval = 1
 
+    | TopValVarFun_Eval = 1
+
 type Frame =
     struct
         val mutable code : code
@@ -276,8 +278,6 @@ type Interpreter(config : config) as this =
                     for l = 0 to ofss_from.Length - 1 do
                         captures.[l] <- env.[ofss_from.[l]]
                 | _ -> dontcare()
-        | UTCexpr _ ->
-            stack_push c  (ref Tag.Start)
         | UTCtype (dl, _) -> message_hook (Message.TypeDefined dl)
         | UTChide (name, tyenv', alloc') ->
             tyenv <- tyenv'
@@ -342,16 +342,18 @@ type Interpreter(config : config) as this =
             stack_push c { BeginFrame.pc = Tag.Start; i = 0 }
         | UEcase _ ->
             stack_push c { CaseFrame.pc = Tag.Start; testvalue = Unchecked.defaultof<value>; i = 0 }
-        | UEtry _
-        | UEif _
-        | UEsetenvvar _
-        | UEwhile _ ->
-            stack_push c (ref Tag.Start)
         | UEfor _ ->
             stack_push c { ForloopFrame.pc = Tag.Start; i = 0; j = 0 }
         | UCval _
         | UCvar _ ->
             stack_push c { ValVarFrame.pc = Tag.Start; i = 0 }
+        | UEtry _
+        | UEif _
+        | UEsetenvvar _
+        | UEwhile _
+        | UTCexpr _
+        | UTCvalvarfun _ ->
+            stack_push c (ref Tag.Start)
         | UEcompare -> dontcare()
 
     let start_compare mode v0 v1 =
@@ -989,6 +991,20 @@ type Interpreter(config : config) as this =
                     tyenv <- tyenv'
                     alloc <- alloc'
                     print_value ty
+                    stack_discard_top()
+                | _ -> dontcare()
+            | UTCvalvarfun (code, tyenv', alloc', shadowed, new_values) ->
+                let frame = frame :?> ref<Tag>
+                match !frame with
+                | Tag.Start ->
+                    frame := Tag.TopValVarFun_Eval
+                    start_code code
+                | Tag.TopValVarFun_Eval ->
+                    tyenv <- tyenv'
+                    alloc <- alloc'
+                    for ofs in shadowed do
+                        env.[ofs] <- Unchecked.defaultof<value>
+                    print_new_values new_values
                     stack_discard_top()
                 | _ -> dontcare()
             | _ -> dontcare()
