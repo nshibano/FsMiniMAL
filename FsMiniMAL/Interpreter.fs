@@ -315,27 +315,9 @@ type Interpreter(config : config) as this =
             for ofs in shadowed do
                 env.[ofs] <- Unchecked.defaultof<value>
             print_new_values new_values
-        | UTCupd (tyenv', alloc', shadowed) ->
+        | UTCupd (tyenv', alloc') ->
             tyenv <- tyenv'
             alloc <- alloc'
-            match shadowed with
-            | Some ofss ->
-                for ofs in ofss do
-                    env.[ofs] <- Unchecked.defaultof<value>
-            | _ -> ()
-        | UTCprint_value ty ->
-            result <- (this.Accu, ty)
-            message_hook (Message.EvaluationComplete (tyenv, ty, this.Accu))
-        | UTCprint_new_values new_values ->
-            let new_values = List.map (fun (name, info) ->
-                let ofs, kind = alloc.Get(name)
-                let value =
-                    match env.[ofs], kind with
-                    | (Vvar v) as r, Mutable -> r
-                    | _, Mutable -> dontcare()
-                    | x, Immutable -> x
-                (name, value, info)) new_values
-            message_hook (Message.NewValues (tyenv, new_values))
         | UEblock _ ->
             stack_push c { BlockFrame.pc = Tag.Start; fields = null; i = 0 }
         | UEarray _ ->

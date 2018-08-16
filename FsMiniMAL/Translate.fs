@@ -236,7 +236,8 @@ let translate_command_list (alloc : Allocator) (tyenvs : tyenv array) (ccmds : c
             | false, _ -> ()
         shadowed.ToArray()
 
-    tcmds.Add(UTCupd (tyenvs.[0], alloc.Clone(), None))
+    tcmds.Add(UTCupd (tyenvs.[0], alloc.Clone()))
+
     for i = 0 to ccmds.Length - 1 do
         let cmd = ccmds.[i]
         match cmd.sc_desc with
