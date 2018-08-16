@@ -95,7 +95,7 @@ and code =
   | UTChide of string * tyenv * Allocator
   | UTCremove of string * int * tyenv * Allocator
   | UTCexn of string * tyenv * Allocator
-  | UTClex of (int * int * HashSet<int> * Syntax.DfaNode * code array) array // arity, offset, alphabets, dfa, actions
+  | UTClex of (int * int * HashSet<int> * Syntax.DfaNode * code array) array * tyenv * Allocator * int array * (string * value_info) list // arity, offset, alphabets, dfa, actions
   | UTCupd of tyenv * Allocator * shadowed_genv_offsets : int array option
   | UTCprint_value of type_expr
   | UTCprint_new_values of (string * value_info) list

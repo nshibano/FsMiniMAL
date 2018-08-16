@@ -285,8 +285,6 @@ let translate_command_list (alloc : Allocator) (tyenvs : tyenv array) (ccmds : c
                     actions_accu.Add(ue)
                 accu.Add(args.Length + 1, ofss.[i], alphabets, dfa, actions_accu.ToArray())
             
-            tcmds.Add(UTClex (accu.ToArray()))
-            tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), Some shadowed))
-            tcmds.Add(UTCprint_new_values new_values)
+            tcmds.Add(UTClex (accu.ToArray(), tyenvs.[i+1], alloc.Clone(), shadowed, new_values))
 
     alloc.EnvSize, tcmds.ToArray()

@@ -292,7 +292,7 @@ type Interpreter(config : config) as this =
             tyenv <- tyenv'
             alloc <- alloc'
             message_hook (Message.ExceptionDefined name)
-        | UTClex defs ->
+        | UTClex (defs, tyenv', alloc', shadowed, new_values) ->
             // Step 1
             let actionss =
                 Array.map (fun (arity, ofs, alphabets, dfa, codes : code array) ->
@@ -309,6 +309,12 @@ type Interpreter(config : config) as this =
                         let captures = Array.map (fun i -> env.[i]) ofss_from
                         closures.[i] <- Vclosure (arity, env_size, ofss_to, captures, code)
                     | _ -> dontcare()
+
+            tyenv <- tyenv'
+            alloc <- alloc'
+            for ofs in shadowed do
+                env.[ofs] <- Unchecked.defaultof<value>
+            print_new_values new_values
         | UTCupd (tyenv', alloc', shadowed) ->
             tyenv <- tyenv'
             alloc <- alloc'
