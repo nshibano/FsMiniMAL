@@ -61,6 +61,8 @@ type Tag =
     | Compare_CompareFields = 1
     | ComparisonOperators_CallCompare = 1
 
+    | TopExpr_Eval = 1
+
 type Frame =
     struct
         val mutable code : code
@@ -224,7 +226,22 @@ type Interpreter(config : config) as this =
         wakeup <- DateTime.MinValue
         while stack_topidx > -1 do
             stack_discard_top()
-            
+
+    let print_value ty =
+        result <- (this.Accu, ty)
+        message_hook (Message.EvaluationComplete (tyenv, ty, this.Accu))
+
+    let print_new_values new_values = 
+        let new_values = List.map (fun (name, info) ->
+            let ofs, kind = alloc.Get(name)
+            let value =
+                match env.[ofs], kind with
+                | (Vvar v) as r, Mutable -> r
+                | _, Mutable -> dontcare()
+                | x, Immutable -> x
+            (name, value, info)) new_values
+        message_hook (Message.NewValues (tyenv, new_values))
+    
     let start_code (c : code) =
         match c with
         | UEconst v ->
@@ -259,6 +276,8 @@ type Interpreter(config : config) as this =
                     for l = 0 to ofss_from.Length - 1 do
                         captures.[l] <- env.[ofss_from.[l]]
                 | _ -> dontcare()
+        | UTCexpr _ ->
+            stack_push c  (ref Tag.Start)
         | UTCtype (dl, _) -> message_hook (Message.TypeDefined dl)
         | UTChide (name, tyenv', alloc') ->
             tyenv <- tyenv'
@@ -959,6 +978,18 @@ type Interpreter(config : config) as this =
                     if frame.i < defs.Length then
                         start_code (snd defs.[frame.i])
                     else stack_discard_top()
+                | _ -> dontcare()
+            | UTCexpr (code, tyenv', alloc', ty) ->
+                let frame = frame :?> ref<Tag>
+                match !frame with
+                | Tag.Start ->
+                    frame := Tag.TopExpr_Eval
+                    start_code code
+                | Tag.TopExpr_Eval ->
+                    tyenv <- tyenv'
+                    alloc <- alloc'
+                    print_value ty
+                    stack_discard_top()
                 | _ -> dontcare()
             | _ -> dontcare()
 

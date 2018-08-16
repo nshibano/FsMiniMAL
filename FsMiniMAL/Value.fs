@@ -89,6 +89,7 @@ and code =
   | UCfun of (int * code) array
 
   // toplevel commands
+  | UTCexpr of code * tyenv * Allocator * type_expr
   | UTCtype of Syntax.typedef list * Syntax.location
   | UTChide of string * tyenv * Allocator
   | UTCremove of string * int * tyenv * Allocator

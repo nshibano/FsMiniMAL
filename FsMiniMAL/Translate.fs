@@ -242,9 +242,7 @@ let translate_command_list (alloc : Allocator) (tyenvs : tyenv array) (ccmds : c
         match cmd.sc_desc with
         | SCCexpr (e, ty) ->
             let ue = expression alloc e
-            tcmds.Add(ue)
-            tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), None))
-            tcmds.Add(UTCprint_value ty)
+            tcmds.Add(UTCexpr (ue, tyenvs.[i+1], alloc.Clone(), ty))
         | SCCval (l, new_values) ->
             let shadowed = find_shadowed_offsets alloc new_values
             let uc = command alloc { sc_desc = SCval l; sc_loc = cmd.sc_loc }
