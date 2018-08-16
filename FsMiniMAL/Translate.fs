@@ -66,7 +66,7 @@ let rec command (alloc : Allocator) (cmd : Syntax.command) : Value.code =
         let uel = List.map (fun (_, e) -> expression alloc e) l
         let ofsl = List.map (fun (name, _) -> alloc.Add(name, access.Mutable)) l
         UCvar(Array.ofSeq (List.zip ofsl uel))
-    | SCtype _ | SChide _ | SCremove _ | SCexn _ | SClex _ -> dontcare()
+    | _ -> dontcare()
 
 and expression (alloc : Allocator) (se : Syntax.expression) : Value.code = 
     let locals_at_start = alloc.Locals
@@ -224,7 +224,7 @@ and expression (alloc : Allocator) (se : Syntax.expression) : Value.code =
     alloc.Locals <- locals_at_start
     ue
 
-let translate_command_list (alloc : Allocator) (tyenvs : tyenv array) (ccmds : command array) =
+let translate_top_command_list (alloc : Allocator) (tyenvs : tyenv array) (ccmds : command array) =
     let mutable alloc = alloc.Clone()
     let tcmds = ResizeArray()
 
@@ -287,5 +287,6 @@ let translate_command_list (alloc : Allocator) (tyenvs : tyenv array) (ccmds : c
                 accu.Add(args.Length + 1, ofss.[i], alphabets, dfa, actions_accu.ToArray())
             
             tcmds.Add(UTClex (accu.ToArray(), tyenvs.[i+1], alloc.Clone(), shadowed, new_values))
+        | _ -> dontcare()
 
     alloc.EnvSize, tcmds.ToArray()

@@ -521,7 +521,7 @@ and cmd_nonexpansive cmd =
     | SCval l -> List.forall (fun (_, e) -> is_nonexpansive e) l
     | SCfun _ -> true
     | SCvar l -> List.forall (fun (_, e) -> is_nonexpansive e) l
-    | SCtype _ | SChide _ | SCremove _ | SCexn _ | SClex _ -> dontcare()
+    | _ -> dontcare()
 
 /// Set genelic level to type vars with level > current_level.
 let rec generalize current_level ty = 
@@ -902,6 +902,7 @@ and command tyenv warning_sink (type_vars : Dictionary<string, type_expr>) curre
     | SCremove _
     | SCexn _
     | SClex _ -> raise (Type_error (Cannot_use_this_command_inside_an_expression, cmd.sc_loc))
+    | _ -> dontcare()
 
 let type_expression warning_sink tyenv (e : Syntax.expression) =
     let ty = expression warning_sink tyenv (Dictionary<string, type_expr>()) 1 None e
@@ -974,7 +975,6 @@ type checked_command =
 let type_command_list warning_sink tyenv cmds =
     let mutable tyenv = tyenv_clone tyenv
     let tyenvs = ResizeArray()
-    //let ccmds = ResizeArray()
     for cmd in cmds do
         match cmd.sc_desc with
         | SCtype dl ->
@@ -1056,6 +1056,7 @@ let type_command_list warning_sink tyenv cmds =
                     (name, args, alphabets, dfa, actions, loc, value_info))
                 cmd.sc_desc <- SCClex result
                 tyenv <- tyenv'
+        | _ -> dontcare()
 
     tyenvs.Add(tyenv)
     tyenvs.ToArray()

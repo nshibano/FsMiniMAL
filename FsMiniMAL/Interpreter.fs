@@ -400,7 +400,7 @@ type Interpreter(config : config) as this =
                 error <- Error.TypeError (err, loc)
             | Error x -> dontcare()
             | Ok tyenvs ->
-                let genv_size, tcmds = Translate.translate_command_list alloc tyenvs (Array.ofList cmds)
+                let genv_size, tcmds = Translate.translate_top_command_list alloc tyenvs (Array.ofList cmds)
                 if genv_size > config.maximum_array_length then
                     state <- State.StoppedDueToError
                     error <- EnvSizeLimit
