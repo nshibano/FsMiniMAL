@@ -437,6 +437,8 @@ let add_stdlib (tyenv : tyenv) (genv : value array) (alloc : Allocator) =
     
     add_func "hash" (arrow a ty_int) 1 (fun rt argv -> of_int rt (to_hash argv.[0]))
 
+    tyenv <- Typechk.tyenv_clone tyenv // clone this now to optimize further cloning
+
     (tyenv, genv, alloc)
 
 let tyenv_std, genv_std, alloc_std = add_stdlib Types.tyenv_basic [||] (Allocator.Create())
