@@ -267,15 +267,12 @@ let translate_command_list (alloc : Allocator) (tyenvs : tyenv array) (ccmds : c
             tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), None))
             tcmds.Add(UTCtype(defs, cmd.sc_loc))
         | SChide name ->
-            tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), None))
-            tcmds.Add(UTChide name)
+            tcmds.Add(UTChide (name, tyenvs.[i+1], alloc.Clone()))
         | SCremove name ->
             let ofs, _ = alloc.Get(name)
-            tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), Some [| ofs |]))
-            tcmds.Add(UTCremove name)
-        | SCexn (name, loc) ->
-            tcmds.Add(UTCupd (tyenvs.[i+1], alloc.Clone(), None))
-            tcmds.Add(UTCexn(name, cmd.sc_loc))
+            tcmds.Add(UTCremove (name, ofs, tyenvs.[i+1], alloc.Clone()))
+        | SCexn (name, _) ->
+            tcmds.Add(UTCexn(name, tyenvs.[i+1], alloc.Clone()))
         | SCClex rules ->
             let new_values = List.init rules.Length (fun i ->
                 let (name, _, _, _, _, _, vi) = rules.[i]

@@ -260,9 +260,19 @@ type Interpreter(config : config) as this =
                         captures.[l] <- env.[ofss_from.[l]]
                 | _ -> dontcare()
         | UTCtype (dl, _) -> message_hook (Message.TypeDefined dl)
-        | UTChide name -> message_hook (Message.Hide name)
-        | UTCremove name -> message_hook (Message.Remove name)
-        | UTCexn (name, _) -> message_hook (Message.ExceptionDefined name)
+        | UTChide (name, tyenv', alloc') ->
+            tyenv <- tyenv'
+            alloc <- alloc'
+            message_hook (Message.Hide name)
+        | UTCremove (name, ofs, tyenv', alloc') ->
+            env.[ofs] <- Unchecked.defaultof<value>
+            tyenv <- tyenv'
+            alloc <- alloc'
+            message_hook (Message.Remove name)
+        | UTCexn (name, tyenv', alloc') ->
+            tyenv <- tyenv'
+            alloc <- alloc'
+            message_hook (Message.ExceptionDefined name)
         | UTClex defs ->
             // Step 1
             let actionss =
