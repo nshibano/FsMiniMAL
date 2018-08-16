@@ -12,9 +12,6 @@ open Types
 open Typechk
 open Value
 open Stdlib
-open Translate
-open MalLex
-open System.Linq.Expressions
 
 type Tag =
     | Start = 0
