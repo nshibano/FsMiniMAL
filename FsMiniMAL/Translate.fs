@@ -1,11 +1,9 @@
 ﻿module FsMiniMAL.Translate
 
 open System.Collections.Generic
-open System.Numerics
 
 open Syntax
 open Types
-open Typechk
 open Value
    
 let rec pattern (alloc : Allocator) (leftmost : bool) (pat : Syntax.pattern) : Value.pattern = 

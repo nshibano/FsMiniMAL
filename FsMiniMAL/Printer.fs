@@ -471,10 +471,7 @@ let string_of_kind lang kind upper =
             | Type_name -> "Type name"
             | Exception_name -> "Exception name"
         if upper then s
-        else
-            let ary = s.ToCharArray()
-            ary.[0] <- Char.ToLowerInvariant ary.[0]
-            String(ary)
+        else s.ToLowerInvariant()
     | Ja ->
         match kind with
         | Expression -> "式"
