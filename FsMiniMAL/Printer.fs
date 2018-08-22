@@ -420,7 +420,7 @@ let print_value_colored define cols ty value =
     update_sizes node
     string_of_node cols node
 
-let print_value define cols ty value = print_value_colored define cols ty value
+let print_value define cols ty value = fst (print_value_colored define cols ty value)
 
 let print_definition (define : tyenv) cols name (info : value_info) value =
     let sxn1 = Section.Create(Flow, 0)
@@ -580,7 +580,7 @@ let print_message lang cols (msg : Message) =
         bprintf sb "%s\r\n" (print_typechk_error lang cols err)
         sb.ToString()
     | EvaluationComplete (tyenv, value, ty)->
-        fst (print_value tyenv cols ty value) + "\r\n"
+        print_value tyenv cols ty value + "\r\n"
     | NewValues (tyenv, new_values) ->
         let sb = new StringBuilder()
         for name, value, info in new_values do
