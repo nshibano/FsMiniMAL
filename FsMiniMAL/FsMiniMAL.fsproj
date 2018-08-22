@@ -16,6 +16,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="wc.fsx" />
     <Compile Include="Lexing.fsi" />
     <Compile Include="Lexing.fs" />
     <Compile Include="Parsing.fsi" />
@@ -34,12 +35,12 @@
     <Compile Include="Typechk.fs" />
     <Compile Include="Allocator.fs" />
     <Compile Include="Value.fs" />
-    <Compile Include="MalPrintf.fs" />
-    <Compile Include="Printer.fs" />
-    <Compile Include="Stdlib.fs" />
-    <Compile Include="Prelude.fs" />
     <Compile Include="Translate.fs" />
+    <Compile Include="MalPrintf.fs" />
+    <Compile Include="Message.fs" />
+    <Compile Include="Printer.fs" />
     <Compile Include="Interpreter.fs" />
+    <Compile Include="Top.fs" />
   </ItemGroup>
 
   <ItemGroup>

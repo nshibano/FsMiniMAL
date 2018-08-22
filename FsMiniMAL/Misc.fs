@@ -25,10 +25,6 @@ type access =
     | Mutable
     | Immutable
 
-type lang =
-    | En
-    | Ja
-
 exception DontCareException
 let dontcare () =
     raise DontCareException
@@ -74,14 +70,6 @@ let rec assqo x l =
         then Some b 
         else assqo x t
     | [] -> None
-
-type Result<'T, 'U> =
-    | Ok of 'T
-    | Error of 'U
-
-let attempt f x = 
-    try Ok (f x)
-    with exn -> Error exn
 
 /// raises InvalidOperatonException when not found
 let find_next_capacity_exn maxlen needed =
@@ -164,10 +152,6 @@ type MultiStrMap<'T> =
             let l = match this with MultiStrMap storage -> storage.[name] // KeyNotFoundException
             List.head l
     
-    member this.Keys = match this with MultiStrMap map -> map |> Seq.map (fun kv -> kv.Key)
-
-    member this.ContainsKey(key) = match this with MultiStrMap storage -> storage.ContainsKey(key)
-
     member this.TryFind name =
         match this with
         | MultiStrMap storage ->

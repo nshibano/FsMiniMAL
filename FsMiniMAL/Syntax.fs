@@ -98,8 +98,6 @@ and expression_desc =
     | SEsetfield of expression * string * expression
     // after typecheck only
     | SEurecord of (int * access * expression) list * expression option
-    | SEugetfield of expression * int
-    | SEusetfield of expression * int * expression
     | SEconstr of int * expression list
     | SEformat of PrintfFormat.PrintfCommand list
 

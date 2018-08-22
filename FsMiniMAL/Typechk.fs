@@ -8,13 +8,11 @@ open System.Collections.Immutable
 open Syntax
 open Types
 open Unify
-open FsMiniMAL.MalLex
 
 type kind =
     | Expression
     | Pattern
     | Variable
-    | Type
     | Constructor
     | Label
     | Record_expression
@@ -25,7 +23,6 @@ type kind =
     | Variable_definition
     | Type_definition
     | Type_name
-    | Exception_name
 
 type type_error_desc =
     | Type_mismatch of tyenv * kind * type_expr * type_expr
@@ -35,15 +32,13 @@ type type_error_desc =
     | Constructor_takes_no_argument of string
     | Constructor_used_with_wrong_number_of_arguments of name : string * expected : int * given : int
     | Label_undefined of string
-    | Label_undefined_for_type of tyenv : tyenv * label : string * ty : type_expr
+    | Label_undefined_for_type of label : string * record_type_name : string
     | Unbound_identifier of string
     | Binding_names_are_inconsistent
     | Binding_types_are_inconsistent
     | Unbound_type_variable of string
     | Wrong_arity_for_type of string
     | Undefined_type_constructor of string
-    | Must_start_with_lowercase of kind
-    | Must_start_with_uppercase of kind
     | Type_definition_contains_immediate_cyclic_type_abbreviation
     | Integer_literal_overflow
     | Some_labels_are_missing
@@ -54,6 +49,9 @@ type type_error_desc =
     | Cannot_use_when_clause_in_try_construct
     | Invalid_printf_format
     | Invalid_identifier
+    | Invalid_type_name
+    | Invalid_label_name
+    | Invalid_constructor_name
     | Not_mutable of kind * string
     | This_expression_is_not_a_record
     | Already_abstract of string
@@ -166,24 +164,24 @@ let add_typedef tyenv loc dl =
     
     // Checks new type names are lowercase.
     for d in dl do
-        if not (Char.IsLower(d.sd_name, 0)) then
-            raise (Type_error (Must_start_with_lowercase Type_name, d.sd_loc))
+        if is_constructor d.sd_name then
+            raise (Type_error (Invalid_type_name, d.sd_loc))
     
     // Checks duplicate in new type names.
     all_differ loc kind.Type_name kind.Type_definition (List.map (fun td -> td.sd_name) dl)
 
-    // Checks variant is uppercase and record label is lowercase.
+    // Check variant case names or record label names.
     for d in dl do
         match d.sd_kind with
         | SKrecord fields ->
             for name, _, _ in fields do
-                if not (Char.IsLower name.[0]) then
-                    raise (Type_error (Must_start_with_lowercase Label, d.sd_loc))
+                if is_constructor name then
+                    raise (Type_error (Invalid_label_name, d.sd_loc))
 
         | SKvariant cases ->
             for name, _ in cases do
                 if not (Char.IsUpper name.[0]) then
-                    raise (Type_error (Must_start_with_uppercase Constructor, d.sd_loc))
+                    raise (Type_error (Invalid_constructor_name, d.sd_loc))
 
         | _ -> ()
                 
@@ -352,13 +350,12 @@ let rec pattern tyenv (type_vars : Dictionary<string, type_expr>) (current_level
             let ty = new_tvar current_level
             (ty, [ (s, { vi_type = ty; vi_access = access.Immutable; }) ])
     | SPas (p, ident) ->
-        if System.Char.IsUpper(ident.[0]) then
-            raise (Type_error(Must_start_with_lowercase Variable_name, pat.sp_loc))
-        else
-            let ty, bnds = pattern tyenv type_vars current_level ty_hint p
-            let bnds = if mem_assoc ident bnds then remove_assoc ident bnds else bnds
-            let bnds = (ident, { vi_type = ty; vi_access = access.Immutable; }) :: bnds
-            (ty, bnds)
+        if is_constructor ident then
+            raise (Type_error (Invalid_identifier, pat.sp_loc))
+        let ty, bnds = pattern tyenv type_vars current_level ty_hint p
+        let bnds = if mem_assoc ident bnds then remove_assoc ident bnds else bnds
+        let bnds = (ident, { vi_type = ty; vi_access = access.Immutable; }) :: bnds
+        (ty, bnds)
     | SPint _ -> ty_int, []
     | SPchar _ -> ty_char, []
     | SPfloat _ -> ty_float, []
@@ -383,7 +380,7 @@ let rec pattern tyenv (type_vars : Dictionary<string, type_expr>) (current_level
         ((Tconstr (type_id.ARRAY, [ ty_accu ])), bnds)
     | SPapply (s, arg) ->
         if not (is_constructor s) then
-            raise (Type_error(Must_start_with_uppercase Constructor, pat.sp_loc))
+            raise (Type_error(Invalid_constructor_name, pat.sp_loc))
         match pick_constr tyenv ty_hint s with
         | Some info ->
             // Create new type expression using constructor information.
@@ -439,7 +436,7 @@ let rec pattern tyenv (type_vars : Dictionary<string, type_expr>) (current_level
             List.map (fun (lab, p) ->
                 match tryAssoc lab fields with
                 | Some (idx, ty, access) -> (lab, p, idx, ty, access)
-                | None -> raise (Type_error (Label_undefined_for_type (tyenv, lab, ty_res), p.sp_loc))) l
+                | None -> raise (Type_error (Label_undefined_for_type (lab, tyenv.types_of_id.[id_record].ti_name), p.sp_loc))) l
         
         // type argument expressions
         let pl = List.map (fun (_, pat, _, _, _) -> pat) fields
@@ -489,7 +486,7 @@ and pattern_list tyenv (type_vars : Dictionary<string, type_expr>) current_level
 let rec is_nonexpansive (e : Syntax.expression) =
     match e.se_desc with
     | SEid _ | SEint _ | SEchar _ | SEfloat _ | SEstring _ | SEformat _ | SEfn _ -> true
-    | SEarray _ | SEapply _ | SEset _ | SEusetfield _ -> false
+    | SEarray _ | SEapply _ | SEset _ -> false
     | SEconstr (_, l) -> List.forall is_nonexpansive l
     | SEtuple l -> List.forall is_nonexpansive l
     | SEurecord (fields, orig) ->
@@ -506,7 +503,6 @@ let rec is_nonexpansive (e : Syntax.expression) =
         is_nonexpansive e1 &&
         is_nonexpansive e2 &&
         (match e3 with Some e3 -> is_nonexpansive e3 | None -> true)
-    | SEugetfield (e, _) -> is_nonexpansive e
     | SEfor (_, e1, _, e2, e3) -> is_nonexpansive e1 && is_nonexpansive e2 && is_nonexpansive e3
     | SEwhile (e1, e2) -> is_nonexpansive e1 && is_nonexpansive e2
     | SEtype (e, _) -> is_nonexpansive e
@@ -601,6 +597,9 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
         | _ -> ty_string
     | SErecord (orig, fields) ->
 
+        // if there is duplicate in labels, report type error
+        all_differ e.se_loc kind.Label kind.Record_expression (List.map fst fields)
+
         // infer orig of { orig with ... }.
         let ty_orig =
             Option.bind (fun e ->
@@ -618,9 +617,6 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
             match id_record with
             | Some _ -> id_record
             | None -> is_record tyenv ty_hint
-
-        // if there is duplicate in labels, report type error
-        all_differ e.se_loc kind.Label kind.Record_expression (List.map fst fields)
         
         // if record type is still not found, decide based on label name of firstly given field
         let id_record =
@@ -644,7 +640,7 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
                 match tryAssoc lab record_fields with
                 | Some (idx, ty, access) ->
                     (lab, idx, ty, access, e)
-                | None -> raise (Type_error (Label_undefined_for_type (tyenv, lab, ty_res), e.se_loc))) fields
+                | None -> raise (Type_error (Label_undefined_for_type (lab, tyenv.types_of_id.[id_record].ti_name), e.se_loc))) fields
         
         // tests for number of given fields
         match orig, List.length fields = List.length record_fields with
@@ -806,7 +802,7 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
             | None, [] -> raise (Type_error (Label_undefined s, e.se_loc))
         let ty_field, ty_record = instanciate_label current_level info
         unify_exp tyenv e1 ty1 ty_record 
-        e.se_desc <- SEugetfield (e1, info.li_index)
+        e.se_desc <- SEapply ({ se_desc = SEid "."; se_loc = e.se_loc }, [e1; { se_desc = SEint (info.li_index.ToString()); se_loc = e.se_loc }])
         ty_field
     | SEsetfield (e1, s, e2) ->
         let ty1 = expression warning_sink tyenv type_vars current_level None e1
@@ -825,9 +821,8 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
         let ty_field, ty_record = instanciate_label current_level info
         unify_exp tyenv e1 ty1 ty_record 
         expression_expect warning_sink tyenv type_vars current_level ty_field e2
-        e.se_desc <- SEusetfield (e1, info.li_index, e2)
+        e.se_desc <- SEapply ({ se_desc = SEid ".<-"; se_loc = e.se_loc }, [e1; { se_desc = SEint (info.li_index.ToString()); se_loc = e.se_loc }; e2])
         ty_unit
-    | SEugetfield _ | SEusetfield _ -> dontcare ()
     | SEfor (s, e1, _, e2, e3) ->
         expression_expect warning_sink tyenv type_vars current_level ty_int e1
         expression_expect warning_sink tyenv type_vars current_level ty_int e2
@@ -984,7 +979,8 @@ let type_command_list warning_sink tyenv cmds =
                 tyenv <- tyenv'
             else raise (Type_error ((Unbound_identifier name), cmd.sc_loc))
         | SCexn (name, tyl) ->
-            if not (Char.IsUpper name.[0]) then raise (Type_error (Must_start_with_uppercase Exception_name, cmd.sc_loc))
+            if not (Char.IsUpper name.[0]) then
+                raise (Type_error (Invalid_constructor_name, cmd.sc_loc))
             let tyl = List.map (type_expr tyenv None (Dictionary<string, type_expr>())) tyl
             let tyenv', _ = add_exn_constructor tyenv name tyl
             tyenvs.Add(tyenv)
@@ -1006,6 +1002,8 @@ let type_command_list warning_sink tyenv cmds =
             tyenv <- tyenv'
         | SClex lex_defs ->
             let ruless = MalLex.Compile lex_defs
+            let accu = List<string * string list * HashSet<int> * DfaNode * expression array * location * Types.value_info>()
+            tyenvs.Add(tyenv)
             for rules in ruless do
                 // validate function names
                 let names = Array.map (fun (name, _, _, _, _, _) -> name) rules
@@ -1037,14 +1035,12 @@ let type_command_list warning_sink tyenv cmds =
                     try unify tyenv ty ty_expected
                     with Unify -> raise (Type_error (Type_mismatch (tyenv, Expression, ty, ty_expected), loc))
                 let new_values = Array.map (fun (name, ty) -> (name, { vi_type = ty; vi_access = Immutable })) new_values
-                let tyenv' = Types.add_values tyenv new_values
-                tyenvs.Add(tyenv)
-                let result = Array.init rules.Length (fun i ->
+                for i = 0 to rules.Length - 1 do
                     let name, args, alphabets, dfa, actions, loc = rules.[i]
                     let _, value_info = new_values.[i]
-                    (name, args, alphabets, dfa, actions, loc, value_info))
-                cmd.sc_desc <- SCClex result
-                tyenv <- tyenv'
+                    accu.Add(name, args, alphabets, dfa, actions, loc, value_info)
+                tyenv <- Types.add_values tyenv new_values
+            cmd.sc_desc <- SCClex (accu.ToArray())
         | _ -> dontcare()
 
     tyenvs.Add(tyenv)

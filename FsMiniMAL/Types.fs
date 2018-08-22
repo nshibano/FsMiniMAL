@@ -414,6 +414,8 @@ let tyenv_basic, id_ref, id_option, tag_exn_Failure, tag_exn_DivisionByZero, tag
           registered_fsharp_types = Dictionary() }
      
     let tyenv = Array.fold add_type tyenv [| ti_int; ti_char; ti_float; ti_array; ti_bool; ti_list; ti_unit; ti_string; ti_format; ti_exn; ti_lexbuf |]
+    
+    tyenv.registered_fsharp_types.Add(typedefof<list<_>>, type_id.LIST)
 
     let tyenv, ids = register_fsharp_types tyenv [| ("ref", typedefof<ref<_>>); ("option", typedefof<option<_>>) |]
     let id_ref = ids.[0]

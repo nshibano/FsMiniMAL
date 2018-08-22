@@ -2,7 +2,7 @@
 
 open System.Collections.Immutable
 
-type Allocator = 
+type alloc = 
     { mutable EnvSize : int // size of env
       mutable Locals : ImmutableDictionary<string, int * access> // variables in local scope
       OuterLocals : ImmutableDictionary<string, int * access> list // variables in outer local scope

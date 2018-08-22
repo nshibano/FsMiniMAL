@@ -2,6 +2,7 @@
 open System.Diagnostics
 open System.Threading
 open System.IO
+open System.Text
 
 open FsMiniMAL
 
@@ -10,8 +11,8 @@ let main argv =
 
     let lang =
         match System.Globalization.CultureInfo.CurrentCulture.Name with
-        | "ja-JP" -> Ja
-        | _ -> En
+        | "ja-JP" -> Printer.Ja
+        | _ -> Printer.En
 
     let history =
         let path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "mal_history.txt")
@@ -25,7 +26,8 @@ let main argv =
             printfn "!!! Failed to open history file. !!!"
             None
         
-    let mal = Interpreter()
+    let mal = Top.createInterpreter()
+    mal.MessageHook <- (fun msg -> Console.Write(FsMiniMAL.Printer.print_message lang (Console.WindowWidth - 1) msg))
     mal.PrintString<- Console.Write
     
     Console.WriteLine("> FsMiniMAL")
@@ -38,9 +40,7 @@ let main argv =
         result
 
     Console.CancelKeyPress.Add(fun ev ->
-            lock mal (fun () -> 
-                if mal.IsRunning then
-                    mal.Cancel())
+            lock mal (fun () -> mal.Cancel())
             ev.Cancel <- true)
 
     while true do
@@ -57,14 +57,22 @@ let main argv =
 
         while
             lock mal (fun () ->
-                if mal.IsRunning then
+                match mal.State with
+                | State.Running ->
                     if mal.IsSleeping && DateTime.Now < mal.Wakeup then
                         Thread.Sleep(100)
                     else
                         mal.Run(1000L)
                     true
-                else
-                    if mal.State = State.Failure then
-                        Console.Write(mal.StringOfError(lang, 80, mal.Error))
-                    false) do ()
+                | State.Success ->
+                    false
+                | State.Failure ->
+                    match mal.LatestMessage with
+                    | Some (Message.UncaughtException (tyenv, exn)) ->
+                        let sb = StringBuilder()
+                        mal.Stacktrace(10, sb)
+                        Console.Write(sb.ToString())
+                    | _ -> ()
+                    false
+                | _ -> dontcare()) do ()
     0

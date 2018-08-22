@@ -6,7 +6,7 @@ open Syntax
 open Types
 open Value
    
-let rec pattern (alloc : Allocator) (leftmost : bool) (pat : Syntax.pattern) : Value.pattern = 
+let rec pattern (alloc : alloc) (leftmost : bool) (pat : Syntax.pattern) : Value.pattern = 
     match pat.sp_desc with
     | SPid s ->
         let ofs =
@@ -47,7 +47,7 @@ let rec pattern (alloc : Allocator) (leftmost : bool) (pat : Syntax.pattern) : V
         let up2 = pattern alloc false    p2
         UPor (up1, up2)
 
-let rec command (alloc : Allocator) (cmd : Syntax.command) : Value.code = 
+let rec command (alloc : alloc) (cmd : Syntax.command) : Value.code = 
     match cmd.sc_desc with
     | SCexpr e -> expression alloc e
     | SCval l ->
@@ -66,7 +66,7 @@ let rec command (alloc : Allocator) (cmd : Syntax.command) : Value.code =
         UCvar(Array.ofSeq (List.zip ofsl uel))
     | _ -> dontcare()
 
-and expression (alloc : Allocator) (se : Syntax.expression) : Value.code = 
+and expression (alloc : alloc) (se : Syntax.expression) : Value.code = 
     let locals_at_start = alloc.Locals
     
     let ue = 
@@ -199,13 +199,6 @@ and expression (alloc : Allocator) (se : Syntax.expression) : Value.code =
             match alloc.Get(s) with
             | (ofs, Mutable) -> UEsetenvvar(ofs, ue)
             | _ -> dontcare()
-        | SEugetfield(e1, i) -> 
-            let ue1 = expression alloc e1
-            UEapply([| UEconst Stdlib.getfield; ue1; UEconst(of_int dummy_runtime i) |])
-        | SEusetfield(e1, i, e2) -> 
-            let ue1 = expression alloc e1
-            let ue2 = expression alloc e2
-            UEapply([| UEconst Stdlib.setfield; ue1; UEconst(of_int dummy_runtime i); ue2 |])
         | SEgetfield _ | SEsetfield _ -> dontcare ()
         | SEfor(s, e1, dir, e2, e3) -> 
             let ue1 = expression alloc e1
@@ -222,7 +215,7 @@ and expression (alloc : Allocator) (se : Syntax.expression) : Value.code =
     alloc.Locals <- locals_at_start
     ue
 
-let translate_top_command_list (alloc : Allocator) (tyenvs : tyenv array) (ccmds : command array) =
+let translate_top_command_list (alloc : alloc) (tyenvs : tyenv array) (ccmds : command array) =
     let mutable alloc = alloc.Clone()
     let tcmds = ResizeArray()
 

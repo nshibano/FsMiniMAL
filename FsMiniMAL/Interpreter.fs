@@ -4,14 +4,13 @@ open System
 open System.Collections.Generic
 open System.Text
 open System.Diagnostics
-open Printf
 
 open FsMiniMAL.Lexing
 open Syntax
 open Types
 open Typechk
 open Value
-open Stdlib
+open Message
 
 type Tag =
     | Start = 0
@@ -83,120 +82,26 @@ type State =
     | Success = 1
     | Failure = 2
 
-type Message =
-    | TypeError of Typechk.type_error_desc * location
-    | EvaluationComplete of tyenv * type_expr * value
-    | NewValues of tyenv * (string * value * value_info) list 
-    | TypeDefined of string list
-    | ExceptionDefined of string
-    | Hide of string
-    | Remove of string
-
-type Error =
-    | LexicalError of LexHelper.lexical_error_desc * location
-    | SyntaxError of location
-    | TypeError of Typechk.type_error_desc * location
-    | UncaughtException of value
-    | MALInsufficientMemory
-    | MALStackOverflow
-    | EnvSizeLimit
-
-type Interpreter(config : config) =
+type Interpreter(config : config, tyenv : tyenv, alloc : alloc, genv : value array) =
 
     let mutable state = State.Success
     let mutable accu : value = unit
-    let mutable env : value array = Array.copy genv_std
+    let mutable env : value array = genv
     let mutable stack = Array.zeroCreate<Frame> 16
     let mutable stack_topidx = -1
-    let mutable tyenv = tyenv_clone tyenv_std
-    let mutable alloc = alloc_std.Clone()
-    let mutable cols = 80
-    let mutable error : Error = Unchecked.defaultof<Error>
+    let mutable tyenv = tyenv
+    let mutable alloc = alloc
     let mutable isSleeping = false
     let mutable wakeup  = DateTime.MinValue
-    let mutable result = (unit, ty_unit)
+    let mutable latestMessage : Message option = None
+    let mutable cycles = 0L
+    let mutable message_hook : Message -> unit = ignore
+
     let rt =
         { memory_counter = ref 0
-          timestamp_at_start = 0L
-          cycles = 0L
           print_string = ignore
           config = config }
-
-    let stacktrace limit (sb : StringBuilder) =
-        let pfn fmt = Printf.kprintf (fun s -> sb.AppendLine s |> ignore) fmt
-        let pfni fmt = Printf.kprintf (fun s ->
-            sb.Append("  ") |> ignore
-            sb.AppendLine s |> ignore) fmt
-        pfn "Stacktrace:"
-        let st = min (limit - 1) stack_topidx
-        if st <> stack_topidx then
-            pfn "  (printing bottom %d frames only)" limit
-        for i = st downto 0 do
-            match stack.[i].code with
-            | UEblock _ -> pfni "Block"
-            | UEarray _ -> pfni "Array"
-            | UEblockwith _ -> pfni "BlockWith"
-            | UEcompare _ -> pfni "Compare"
-            | UEapply _ -> pfni "Apply"
-            | UEbegin _ -> pfni "Begin"
-            | UEcase _ -> pfni "Case"
-            | UEtry _ -> pfni "Try"
-            | UEif _ -> pfni "If"
-            | UEsetenvvar _ -> pfni "Setenvvar"
-            | UEfor _ -> pfni "For"
-            | UEwhile _ -> pfni "While"
-            | UCval _ -> pfni "Val"
-            | UCvar _ -> pfni "Var"
-            | _ -> pfn "  Error"
-
-    let string_of_error (lang : lang) (cols : int) (err : Error) =
-        let buf = new StringBuilder()
-        match err with
-        | LexicalError (lex_err, loc) ->
-            bprintf buf "> %s\r\n  Lexical error (%A).\r\n" (Syntax.describe_location loc) lex_err
-        | SyntaxError loc ->
-            bprintf buf "> %s\r\n  Syntax error.\r\n" (Syntax.describe_location loc)
-        | TypeError (type_err, loc) ->
-            bprintf buf "> %s\r\n" (Syntax.describe_location loc)
-            bprintf buf "%s\r\n" (Printer.print_typechk_error lang cols type_err)
-        | UncaughtException exn_value ->
-            buf.Add("UncaughtException: ")
-            buf.Add(Printer.print_value_without_type tyenv cols ty_exn exn_value)
-            buf.AppendLine() |> ignore
-            stacktrace 10 buf
-        | MALStackOverflow ->
-            buf.Add("StackOverflow\r\n")
-            stacktrace 10 buf
-        | MALInsufficientMemory ->
-            buf.Add("InsufficientMemory\r\n")
-        | EnvSizeLimit ->
-            bprintf buf "> Size of the global env hits the limit.\r\n"
-        buf.ToString()
-    
-    let default_message_hook (msg : Message) =
-        match msg with
-        | Message.TypeError (err, loc) -> rt.print_string (string_of_error En 80 (Error.TypeError (err, loc)))
-        | Message.EvaluationComplete (tyenv, ty, value)-> rt.print_string (Printer.print_value tyenv 80 ty value + "\r\n")
-        | Message.NewValues (tyenv, new_values) ->
-            let sb = new StringBuilder()
-            for name, value, info in new_values do
-                sb.Add (Printer.print_definition tyenv 80 name info value)
-                sb.Add("\r\n")
-            rt.print_string (sb.ToString())
-        | Message.TypeDefined names -> List.iter (fun name -> rt.print_string (sprintf "Type %s defined.\r\n" name)) names
-        | Message.ExceptionDefined name -> rt.print_string (sprintf "Exception %s is defined.\r\n" name)
-        | Message.Hide name -> rt.print_string (sprintf "Type %s is now abstract.\r\n" name)
-        | Message.Remove name -> rt.print_string (sprintf "Value %s has been removed.\r\n" name)
-    
-    let mutable message_hook = default_message_hook
-
-    let lang =
-        match System.Globalization.CultureInfo.CurrentCulture.Name with
-        | "ja-JP" -> Ja
-        | _ -> En
-
-    let pfn fmt = Printf.kprintf (fun s -> rt.print_string (s + "\r\n")) fmt
-    
+            
     let stack_push c f =
         stack_topidx <- stack_topidx + 1
         if (stack_topidx + 1) > stack.Length then
@@ -221,15 +126,14 @@ type Interpreter(config : config) =
         state <- State.Success
         isSleeping <- false
         accu <- Value.unit
-        result <- (Value.unit, ty_unit)
-        error <-  Unchecked.defaultof<Error>
+        latestMessage <- None
         wakeup <- DateTime.MinValue
         while stack_topidx > -1 do
             stack_discard_top()
 
-    let print_value ty =
-        result <- (accu, ty)
-        message_hook (Message.EvaluationComplete (tyenv, ty, accu))
+    let send_message (msg : Message) =
+        latestMessage <- Some msg
+        message_hook msg
 
     let print_new_values new_values = 
         let new_values = List.map (fun (name, info) ->
@@ -240,7 +144,7 @@ type Interpreter(config : config) =
                 | _, Mutable -> dontcare()
                 | x, Immutable -> x
             (name, value, info)) new_values
-        message_hook (Message.NewValues (tyenv, new_values))
+        send_message (Message.NewValues (tyenv, new_values))
     
     let start_code (c : code) =
         match c with
@@ -276,16 +180,18 @@ type Interpreter(config : config) =
                     for l = 0 to ofss_from.Length - 1 do
                         captures.[l] <- env.[ofss_from.[l]]
                 | _ -> dontcare()
-        | UTCtype (dl, _) -> message_hook (Message.TypeDefined dl)
+        | UTCtype (dl, tyenv') -> 
+            tyenv <- tyenv'
+            message_hook (Message.TypeDefined dl)
         | UTChide (name, tyenv', alloc') ->
             tyenv <- tyenv'
             alloc <- alloc'
-            message_hook (Message.Hide name)
+            message_hook (Message.TypeHidden name)
         | UTCremove (name, ofs, tyenv', alloc') ->
             env.[ofs] <- Unchecked.defaultof<value>
             tyenv <- tyenv'
             alloc <- alloc'
-            message_hook (Message.Remove name)
+            message_hook (Message.ValueRemoved name)
         | UTCexn (name, tyenv', alloc') ->
             tyenv <- tyenv'
             alloc <- alloc'
@@ -383,25 +289,26 @@ type Interpreter(config : config) =
     let start src =
         cancel()
         match parse src with
-        | Error err ->
+        | Error msg ->
             state <- State.Failure
-            error <- err
+            send_message msg
         | Ok cmds ->
-
             let warning_sink (err : type_error_desc, loc : location) =
-                pfn "> %s" (Syntax.describe_location loc)
-                pfn "%s" (Printer.print_typechk_error lang cols err)
-
-            match attempt (Typechk.type_command_list warning_sink tyenv) cmds with
-            | Error (Type_error (err, loc)) ->
-                state <- State.Failure
-                error <- Error.TypeError (err, loc)
-            | Error x -> dontcare()
-            | Ok tyenvs ->
+                send_message (Message.TypeError (err, loc))
+                
+            let tyenvs =
+                try Some (Typechk.type_command_list warning_sink tyenv cmds)
+                with Type_error (err, loc) ->
+                    state <- State.Failure
+                    send_message (Message.TypeError (err, loc))
+                    None
+            match tyenvs with
+            | None -> ()
+            | Some tyenvs ->
                 let genv_size, tcmds = Translate.translate_top_command_list alloc tyenvs (Array.ofList cmds)
                 if genv_size > config.maximum_array_length then
                     state <- State.Failure
-                    error <- EnvSizeLimit
+                    send_message EnvSizeLimit
                 else
                     env <- array_ensure_capacity_exn config.maximum_array_length genv_size env
                     start_code (UEbegin tcmds)
@@ -470,15 +377,15 @@ type Interpreter(config : config) =
             do_match true pat exn_value |> ignore
             start_code catch
         | None ->
-            error <- Error.UncaughtException exn_value
             state <- State.Failure
+            send_message (UncaughtException (tyenv, exn_value))
 
     let run (slice_ticks : int64) =
         
         isSleeping <- false
-        rt.timestamp_at_start <- Stopwatch.GetTimestamp()
+        let timestamp_at_start = Stopwatch.GetTimestamp()
         
-        while state = State.Running && (not isSleeping) && (Stopwatch.GetTimestamp() - rt.timestamp_at_start) < slice_ticks do
+        while state = State.Running && (not isSleeping) && (Stopwatch.GetTimestamp() - timestamp_at_start) < slice_ticks do
             let code = stack.[stack_topidx].code
             let frame = stack.[stack_topidx].frame
             match code with
@@ -495,7 +402,7 @@ type Interpreter(config : config) =
                     if frame.i < field_exprs.Length then
                         start_code field_exprs.[frame.i]
                     else
-                        accu <- block_createrange rt tag frame.fields
+                        accu <- block_create rt tag frame.fields
                         stack_discard_top()
                 | _ -> dontcare()
             | UEarray fields ->
@@ -511,8 +418,8 @@ type Interpreter(config : config) =
                                 do_raise v
                                 false
                             | Value.InsufficientMemory as e ->
-                                error <- Error.MALInsufficientMemory
                                 state <- State.Failure
+                                send_message Message.MALInsufficientMemory
                                 false
                     if cont then
                         if fields.Length = 0 then
@@ -550,7 +457,7 @@ type Interpreter(config : config) =
                     if frame.i < idxl.Length then
                         start_code exprl.[frame.i]
                     else
-                        accu <- block_createrange rt frame.tag frame.fields
+                        accu <- block_create rt frame.tag frame.fields
                         stack_discard_top()
                 | _ -> dontcare()
             | UEcompare ->
@@ -761,8 +668,8 @@ type Interpreter(config : config) =
                                 match e with
                                 | MALException v -> do_raise v
                                 | Value.InsufficientMemory ->
-                                    error <- Error.MALInsufficientMemory
                                     state <- State.Failure
+                                    send_message Message.MALInsufficientMemory
                                 | _ -> raise e
                         | Vclosure (arity = arity; env_size = env_size; captures = captures; offsets = offsets; code = code) ->
                             // Start evaluation of the closure
@@ -976,7 +883,7 @@ type Interpreter(config : config) =
                 | Tag.TopExpr_Eval ->
                     tyenv <- tyenv'
                     alloc <- alloc'
-                    print_value ty
+                    send_message (Message.EvaluationComplete (tyenv, accu, ty))
                     stack_discard_top()
                 | _ -> dontcare()
             | UTCvalvarfun (code, tyenv', alloc', shadowed, new_values) ->
@@ -1000,14 +907,15 @@ type Interpreter(config : config) =
                     state <- State.Success
                 elif stack_topidx + 1 >= config.maximum_stack_depth then
                     state <- State.Failure
-                    error <- Error.MALStackOverflow
+                    send_message Message.MALStackOverflow
                 elif not (check_free_memory rt 0) then
                     state <- State.Failure
-                    error <- Error.MALInsufficientMemory
+                    send_message Message.MALInsufficientMemory
 
-            rt.cycles <- rt.cycles + 1L
+            cycles <- cycles + 1L
 
-    let alias_exn new_name orig_name =
+    let alias new_name orig_name =
+        cancel()
         let vi = Option.get (Types.try_get_value tyenv orig_name)
         tyenv <- Types.add_value tyenv new_name vi
         let orig_ofs, _ = alloc.Get(orig_name)
@@ -1024,30 +932,58 @@ type Interpreter(config : config) =
         env <- array_ensure_capacity_exn config.maximum_array_length (ofs + 1) env
         env.[ofs] <- value
 
-    do
-        start Prelude.prelude
-        run Int64.MaxValue
-        if state <> State.Success then dontcare()
-        alias_exn "@" "list_append"
-        alias_exn "!" "ref_get"
-        alias_exn ":=" "ref_set"
-
-    new() = Interpreter(config.Default)
+    let stacktrace limit (sb : StringBuilder) =
+        let pfn fmt = Printf.kprintf (fun s -> sb.AppendLine s |> ignore) fmt
+        let pfni fmt = Printf.kprintf (fun s ->
+            sb.Append("  ") |> ignore
+            sb.AppendLine s |> ignore) fmt
+        pfn "Stacktrace:"
+        let st = min (limit - 1) stack_topidx
+        if st <> stack_topidx then
+            pfn "  (printing bottom %d frames only)" limit
+        for i = st downto 0 do
+            match stack.[i].code with
+            | UEblock _ -> pfni "Block"
+            | UEarray _ -> pfni "Array"
+            | UEblockwith _ -> pfni "BlockWith"
+            | UEcompare _ -> pfni "Compare"
+            | UEapply _ -> pfni "Apply"
+            | UEbegin _ -> pfni "Begin"
+            | UEcase _ -> pfni "Case"
+            | UEtry _ -> pfni "Try"
+            | UEif _ -> pfni "If"
+            | UEsetenvvar _ -> pfni "Setenvvar"
+            | UEfor _ -> pfni "For"
+            | UEwhile _ -> pfni "While"
+            | UCval _ -> pfni "Val"
+            | UCvar _ -> pfni "Var"
+            | _ -> pfn "  Error"
 
     member this.State with get() = state
     member this.Run(ticks : int64) = run ticks
     member this.Accu = accu
-    member this.Error = error
     member this.Wakeup = wakeup
-    member this.Cols with get() = cols and set n = cols <- n
-    member this.TypeEnv = tyenv
-    member this.Result = result
-    member this.PrintString with get() = rt.print_string and set ps = rt.print_string <- ps
+    member this.Tyenv = tyenv
+    member this.Alloc = alloc
+    member this.Cycles = cycles
+    member this.LatestMessage = latestMessage
+    member this.MessageHook with get() = message_hook and set f = message_hook <- f
+    member this.PrintString with get() = rt.print_string and set f = rt.print_string <- f
     member this.Runtime = rt
-    member this.Cancel() = cancel()
-    member this.StringOfError(lang, cols, err) = string_of_error lang cols err
-    member this.IsRunning = state = State.Running
     member this.IsSleeping = isSleeping
+    member this.Result =
+        match latestMessage with
+        | Some (Message.EvaluationComplete (tyenv, ty, value)) -> (tyenv, ty, value)
+        | _ -> raise (InvalidOperationException())
+    member this.Cancel() = cancel()
+    
+    member this.Alias newName origName =
+        alias newName origName
+    
+    /// Internally calls Cancel()    
+    member this.GEnv =
+        cancel()
+        env
     
     /// Internally calls Cancel()    
     member this.Start(s) = start s
@@ -1096,3 +1032,5 @@ type Interpreter(config : config) =
         let tyenv', id = Types.register_fsharp_types tyenv types
         tyenv <- tyenv'
         id
+
+    member this.Stacktrace(limit, sb) = stacktrace limit sb

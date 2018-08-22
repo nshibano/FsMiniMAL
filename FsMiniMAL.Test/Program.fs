@@ -12,12 +12,12 @@ and hogefuga<'a> = Hoge of 'a | Fuga of foobar<'a>
 let main argv = 
 
     let topcase source answer =
-        let mal = Interpreter()
+        let mal = Top.createInterpreter()
         mal.Do (source)
         match mal.State with
         | State.Success ->
-            let value, ty = mal.Result
-            let result = Printer.print_value_without_type mal.TypeEnv 10000 ty value
+            let tyenv, value, ty = mal.Result
+            let result = Printer.print_value_without_type tyenv 10000 ty value
             if result = answer then
                 ()
             else
@@ -37,16 +37,16 @@ let main argv =
         topcase (String.Concat("begin ", source, " end")) answer
     
     let type_error source = 
-        let mal = Interpreter()
+        let mal = Top.createInterpreter()
         try mal.Do (source) with _ -> ()
-        if mal.State = State.Failure && (match mal.Error with Error.TypeError _ -> true | _ -> false) then
+        if mal.State = State.Failure && (match mal.LatestMessage with Some (Message.TypeError _) -> true | _ -> false) then
             ()
         else
             printfn "Test failed. (expected type error)"
             printfn "Source: %s" source
 
     let fails_safely source =
-        let mal = Interpreter({ FsMiniMAL.Value.config.Default with maximum_stack_depth = 1000; bytes_trigger_gc = 20000; bytes_stop_exec = 10000 })
+        let mal = Top.createInterpreterFromConfig({ FsMiniMAL.Value.config.Default with maximum_stack_depth = 1000; bytes_trigger_gc = 20000; bytes_stop_exec = 10000 })
         try
             mal.Do (source)
             if mal.State = State.Success then
@@ -58,7 +58,7 @@ let main argv =
             printfn "exn: %s %s" (exn.GetType().Name) exn.Message
     
     let timeout slice source =
-        let mal = Interpreter()
+        let mal = Top.createInterpreter()
         mal.Start(source)
         mal.Run(slice)
         if mal.State = State.Running then ()
@@ -67,26 +67,26 @@ let main argv =
             printfn "Source: %s" source
 
     let keep_shadowed_globals_after_failure () =
-        let mal = Interpreter() 
+        let mal = Top.createInterpreter() 
         mal.Do("val n = 100")
         mal.Do("val n = 200 / 0")
         mal.Do("n")
 
-        let value, ty = mal.Result
-        let result = Printer.print_value_without_type mal.TypeEnv 10000 ty value
+        let tyenv, value, ty = mal.Result
+        let result = Printer.print_value_without_type mal.Tyenv 10000 ty value
         if result = "100" then
             ()
         else
             printfn "Test keep_shadowed_globals_after_failure failed."
 
     let apply_side_effects_on_tyenv_even_if_execution_failed () =
-        let mal = Interpreter() 
+        let mal = Top.createInterpreter() 
         mal.Do("val a = [||]")
         mal.Do("begin add a 100; 1 / 0 end")
         mal.Do("a.[0]")
 
-        let value, ty = mal.Result
-        let result = Printer.print_value_without_type mal.TypeEnv 10000 ty value
+        let tyenv, value, ty = mal.Result
+        let result = Printer.print_value_without_type mal.Tyenv 10000 ty value
         if result = "100" then
             ()
         else
@@ -298,7 +298,7 @@ let main argv =
 
     fails_safely "val a = [||]; while true do array_add a 1.0" // this will be out of memory
 
-    topcase "type foobar = Foo | Bar of int; val l = [ Foo, Bar 100 ]; hide foobar; l" "[<abstract>, <abstract>]"
+    topcase "type foobar = Foo | Bar of int; val l = [ Foo, Bar 100 ]; hide foobar; l" "[<abstr>, <abstr>]"
 
     topcase "type 'a mylist = Cons of ('a * 'a mylist) | Nil; Cons (1, Cons (2, Cons (3, Nil)))" "Cons (1, Cons (2, Cons (3, Nil)))"
 
@@ -373,20 +373,27 @@ let main argv =
 
     let fsharp_interop () =
         try
-            let mal = Interpreter()
+            let mal = Top.createInterpreter()
             mal.RegisterFsharpTypes([|("foobar", typedefof<foobar<_>>); ("hogefuga", typedefof<hogefuga<_>>)|]) |> ignore
             mal.Fun("foobar_roundtrip", (fun rt (x : foobar<int>) -> x))
+            mal.Fun("intlist_roundtrip", (fun rt (x : int list) -> x))
             let getResult() =
-                let value, ty = mal.Result
-                Printer.print_value_without_type mal.TypeEnv 10000 ty value
+                try
+                    let tyenv, value, ty = mal.Result
+                    Some (Printer.print_value_without_type tyenv 10000 ty value)
+                with _ -> None
+
             let cases =
                 [| ("foobar_roundtrip Foo", "Foo")
                    ("foobar_roundtrip (Bar (Hoge 0))", "Bar (Hoge 0)")
-                   ("foobar_roundtrip (Bar (Fuga Foo))", "Bar (Fuga Foo)") |]
+                   ("foobar_roundtrip (Bar (Fuga Foo))", "Bar (Fuga Foo)")
+                   ("intlist_roundtrip [1, 2, 3]", "[1, 2, 3]")|]
 
             for (src, result) in cases do
                 mal.Do(src)
-                if getResult() <> result then failwith (src + " => " + result)
+                match getResult() with
+                | None -> failwith (src + " => " + result)
+                | Some s -> if s <> result then failwith (src + " => " + result)
         with Failure msg -> printfn "Error(fsharp_interop): %s" msg
     
     fsharp_interop()

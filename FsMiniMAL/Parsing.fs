@@ -157,7 +157,7 @@ module Implementation =
     // Read the tables written by FSYACC.  
 
     type AssocTable(elemTab:uint16[], offsetTab:uint16[]) =
-        let cache = new Dictionary<_,_>(2000)
+        let cache = new Dictionary<_,_>()
 
         member t.readAssoc (minElemNum,maxElemNum,defaultValueOfAssoc,keyToFind) =     
             // do a binary chop on the table 

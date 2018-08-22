@@ -89,14 +89,14 @@ and code =
   | UCfun of (int * code) array
 
   // toplevel commands
-  | UTCexpr of code * tyenv * Allocator * type_expr
-  | UTCvalvarfun of code * tyenv * Allocator * int array * (string * value_info) list
+  | UTCexpr of code * tyenv * alloc * type_expr
+  | UTCvalvarfun of code * tyenv * alloc * int array * (string * value_info) list
   | UTCtype of string list * tyenv
-  | UTChide of string * tyenv * Allocator
-  | UTCremove of string * int * tyenv * Allocator
-  | UTCexn of string * tyenv * Allocator
-  | UTClex of (int * int * HashSet<int> * Syntax.DfaNode * code array) array * tyenv * Allocator * int array * (string * value_info) list // arity, offset, alphabets, dfa, actions
-  | UTCupd of tyenv * Allocator
+  | UTChide of string * tyenv * alloc
+  | UTCremove of string * int * tyenv * alloc
+  | UTCexn of string * tyenv * alloc
+  | UTClex of (int * int * HashSet<int> * Syntax.DfaNode * code array) array * tyenv * alloc * int array * (string * value_info) list // arity, offset, alphabets, dfa, actions
+  | UTCupd of tyenv * alloc
 
 and pattern =
   | UPid of int
@@ -134,19 +134,12 @@ and config =
         }
 
 and runtime =
-    { 
-      /// The value obtained from System.Diagnostics.Stopwatch.GetTimestamp() at start of this time slice.
-      mutable timestamp_at_start : int64
-
-      /// The counter for interpreter cycles.
-      mutable cycles : int64
-      
+    {       
       /// Total bytes used by mal values this interpreter owns.
       /// This field is increased when new mal value is created, and decreased when mal value is freed by CLR garbage collector. 
       memory_counter : int ref
 
       mutable print_string : string -> unit
-      
       config : config
     }
 
@@ -154,8 +147,6 @@ exception InsufficientMemory
 
 let dummy_runtime =
     { runtime.memory_counter = ref 0
-      timestamp_at_start = 0L
-      cycles = 0L
       print_string = ignore
       config =
         { 
@@ -197,26 +188,19 @@ let of_float (rt : runtime) x =
 
 let to_float v = match v with Vfloat (x, _) -> x | _ -> dontcare()
 
-let is_float v = match v with Vfloat _ -> true | _ -> false
-
-let block_createrange (rt : runtime) tag (fields : value array) =
+let block_create (rt : runtime) tag (fields : value array) =
     Interlocked.Add(rt.memory_counter, block_overhead + fields.Length * block_increment) |> ignore
     Vblock (tag, fields, rt.memory_counter)
 
-let gettag (v : value) =
+let get_tag (v : value) =
     match v with
     | Vint (i, _) -> i
     | Vblock (tag, _, _) -> tag
     | _ -> dontcare()
 
-let getfields (v : value) =
+let get_fields (v : value) =
     match v with
     | Vint _ -> [||]
-    | Vblock (_, fields, _) -> fields
-    | _ -> dontcare()
-    
-let block_getrange (v : value) =
-    match v with
     | Vblock (_, fields, _) -> fields
     | _ -> dontcare()
          
@@ -230,7 +214,7 @@ let array_create (rt : runtime) (needed_capacity : int) =
     Interlocked.Add(rt.memory_counter, bytes) |> ignore
     Varray { count = 0; storage = Array.zeroCreate<value> capacity; memory_counter = rt.memory_counter }
 
-/// raises InsufficientMemory, RuntimeTypeError
+/// raises InsufficientMemory
 let array_add (rt : runtime) (ary : value) (item : value) =
     match ary with  
     | Varray ({ count = count; storage = storage } as ary) ->
@@ -249,6 +233,7 @@ let array_add (rt : runtime) (ary : value) (item : value) =
         ary.count <- ary.count + 1
     | _ -> dontcare()
 
+/// raises InsufficientMemory
 let array_append (rt : runtime) (a : value) (b : value) =
     match a, b with
     | Varray { count = a_count; storage = a_storage }, Varray { count = b_count; storage = b_storage } ->
@@ -281,7 +266,7 @@ let array_set (ary : value) i (x : value) =
         else raise (IndexOutOfRangeException())
     | _ -> dontcare()
 
-/// raises IndexOutOfRangeException, RuntimeTypeError
+/// raises IndexOutOfRangeException
 let array_remove_at (rt : runtime) (v : value) i =
     match v with
     | Varray ary ->
@@ -301,6 +286,7 @@ let array_clear (rt : runtime) (v : value) =
         ary.count <- 0
     | _ -> dontcare()
 
+/// raises InsufficientMemory
 let array_copy (rt : runtime) (orig : value) =
     match orig with
     | Varray { count = count; storage = storage } ->
@@ -356,7 +342,7 @@ let to_bool v =
 
 exception MALException of value // exception which user code can catch
 
-let mal_failure rt msg = block_createrange rt tag_exn_Failure [| of_string rt msg |]
+let mal_failure rt msg = block_create rt tag_exn_Failure [| of_string rt msg |]
 let mal_failwith rt msg = raise (MALException (mal_failure rt msg))
 
 let mal_DivisionByZero = of_int dummy_runtime tag_exn_DivisionByZero
@@ -455,7 +441,7 @@ let rec obj_of_value (cache : Dictionary<Type, HashSet<value> -> value -> obj>) 
                 let constr = FSharpValue.PreComputeTupleConstructor(ty)
                 let types = FSharpType.GetTupleElements(ty)
                 (fun (touch : HashSet<value>) (value : value) ->
-                    let fields = block_getrange value
+                    let fields = get_fields value
                     touch.Add(value) |> ignore
                     let objs = Array.map2 (fun ty field -> obj_of_value cache tyenv touch ty field) types fields
                     touch.Remove(value) |> ignore
@@ -464,7 +450,7 @@ let rec obj_of_value (cache : Dictionary<Type, HashSet<value> -> value -> obj>) 
                 let constr = FSharpValue.PreComputeRecordConstructor(ty)
                 let types = Array.map (fun (info : PropertyInfo) -> info.PropertyType) (FSharpType.GetRecordFields(ty))
                 (fun (touch : HashSet<value>) (value : value) ->
-                    let fields = block_getrange value
+                    let fields = get_fields value
                     touch.Add(value) |> ignore
                     let objs = Array.map2 (fun ty value -> obj_of_value cache tyenv touch ty value) types fields
                     touch.Remove(value) |> ignore
@@ -474,9 +460,9 @@ let rec obj_of_value (cache : Dictionary<Type, HashSet<value> -> value -> obj>) 
                 let constrs = Array.map (fun (case : UnionCaseInfo) -> FSharpValue.PreComputeUnionConstructor(case)) cases
                 let case_field_types = Array.map (fun (case : UnionCaseInfo) -> Array.map (fun (prop : PropertyInfo) -> prop.PropertyType) (case.GetFields())) cases
                 (fun (touch : HashSet<value>) (value : value) ->
-                    let tag = gettag value
+                    let tag = get_tag value
                     let types = case_field_types.[tag]
-                    let fields = getfields value
+                    let fields = get_fields value
                     touch.Add(value) |> ignore
                     let objs = Array.map2 (fun ty value -> obj_of_value cache tyenv touch ty value) types fields
                     touch.Remove(value) |> ignore
@@ -520,14 +506,14 @@ let rec value_of_obj (cache : Dictionary<Type, runtime -> obj -> value>) (tyenv 
                 (fun (rt : runtime) (obj : obj) -> 
                     let objs = reader obj
                     let values = Array.map2 (fun ty obj -> value_of_obj cache tyenv ty rt obj) types objs
-                    block_createrange rt 0 values)
+                    block_create rt 0 values)
             elif FSharpType.IsRecord ty then
                 let reader = FSharpValue.PreComputeRecordReader(ty)
                 let types = Array.map (fun (info : PropertyInfo) -> info.PropertyType) (FSharpType.GetRecordFields(ty))
                 (fun (rt : runtime) (obj : obj) -> 
                     let objs = reader obj
                     let values = Array.map2 (fun ty obj -> value_of_obj cache tyenv ty rt obj) types objs
-                    block_createrange rt 0 values)
+                    block_create rt 0 values)
             elif FSharpType.IsUnion ty then
                 let tag_reader = FSharpValue.PreComputeUnionTagReader(ty)
                 let cases = FSharpType.GetUnionCases(ty)
@@ -544,7 +530,7 @@ let rec value_of_obj (cache : Dictionary<Type, runtime -> obj -> value>) (tyenv 
                             (fun (rt : runtime) (obj : obj) ->
                                 let field_objs = case_reader obj
                                 let field_vals = Array.map2 (fun ty obj -> value_of_obj cache tyenv ty rt obj) field_types field_objs
-                                block_createrange rt i field_vals)) cases
+                                block_create rt i field_vals)) cases
                 (fun (rt : runtime) (obj : obj) ->
                     let tag = tag_reader obj
                     fs.[tag] rt obj)

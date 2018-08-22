@@ -12,7 +12,7 @@ let main argv =
     printfn "> 64bit process: %A" Environment.Is64BitProcess
     printfn "> Debugger attached: %A" System.Diagnostics.Debugger.IsAttached
 
-    let mal = Interpreter()
+    let mal = Top.createInterpreter()
     mal.Do("
 fun fib n =
     if n <= 1 then
@@ -151,12 +151,12 @@ fun aatree n =
             let mutable accu_microseconds = 0L
             for j = 0 to repeat - 1 do
                 sw.Restart()
-                let cycles_at_start = mal.Runtime.cycles
+                let cycles_at_start = mal.Cycles
                 mal.Do(cases.[i])
                 sw.Stop()
                 if mal.State <> State.Success then failwith ""
                 cur <- min cur sw.ElapsedMicroseconds
-                accu_malticks <- accu_malticks + (mal.Runtime.cycles - cycles_at_start)
+                accu_malticks <- accu_malticks + (mal.Cycles - cycles_at_start)
                 accu_microseconds <- accu_microseconds + sw.ElapsedMicroseconds
             let cur_oldbest = int (Math.Round(100.0 * float cur / float oldbest.[i]))
             let newbest = min cur oldbest.[i]
