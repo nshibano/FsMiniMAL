@@ -362,27 +362,25 @@ let update_sizes (elem : Node) =
     | Section s -> loop s
     | Text _ -> ()
 
-let string_of_node2 cols elem =
-    let buf = StringBuilder()
-    let level_buf = List<int>()
+let string_of_node cols node =
+    let buf = List<struct (char * int16)>()
 
     let mutable col = 0
 
-    let add_level level count =
-        for i = 0 to count - 1 do
-            level_buf.Add(level)
-
-    let spaces level n =
-        buf.Add(' ', n)
-        add_level (~~~level) n
+    let add_spaces (level : int16) (n : int) =
+        for i = 0 to n - 1 do
+            buf.Add(struct (' ', ~~~level))
         col <- col + n
     
+    let add_string (level : int16) (s : string) =
+        for c in s do
+            buf.Add(struct (c, level))
+        col <- col + s.Length
+
     let rec loop level indent vertical =
         function
-        | Text s ->
-            buf.Append(s) |> ignore
-            add_level level s.Length
-            col <- col + s.Length
+        | Text sb ->
+            add_string level (sb.ToString())
         | Section box ->
             let vertical = box.Kind = Vertical && cols - col < box.Size
             let indent = indent + box.Indent
@@ -390,30 +388,27 @@ let string_of_node2 cols elem =
                 if i <> 0 then
                     if vertical || cols - col < (1 + match box.Items.[i] with Text sb -> sb.Length | Section s -> s.Size)
                     then
-                        buf.Add("\r\n")
-                        add_level level 2
+                        add_string level "\r\n"
                         col <- 0
-                        spaces level indent
-                    else spaces level 1
-                loop (level + 1) indent vertical box.Items.[i]
+                        add_spaces (level + 1s) indent
+                    else add_spaces (level + 1s) 1
+                loop (level + 1s) indent vertical box.Items.[i]
     
-    loop 0 0 false elem
-    if buf.Length <> level_buf.Count then failwith "error"
-    (buf.ToString(), level_buf.ToArray())
+    loop 0s 0 false node
 
-let string_of_node cols elem = fst (string_of_node2 cols elem)
+    let buf = buf.ToArray()
+    let s = String(Array.map (fun struct (c, _) -> c) buf)
+    let colors = Array.map (fun struct (_, color) -> color) buf
+    (s, colors)
 
-let print_value_without_type define cols ty value =
+let print_value_without_type_colored define cols ty value =
     let e = node_of_value define ty value
     update_sizes e
     string_of_node cols e
 
-let print_value_without_type2 define cols ty value =
-    let elem = node_of_value define ty value
-    update_sizes elem
-    string_of_node2 cols elem
+let print_value_without_type define cols ty value = fst (print_value_without_type_colored define cols ty value)
 
-let print_value2 define cols ty value =
+let print_value_colored define cols ty value =
     let s1 = Section.Create(Flow, 0)
     s1.Add("- :")
     s1.Add(node_of_scheme define ty)
@@ -423,9 +418,9 @@ let print_value2 define cols ty value =
     s2.Add(node_of_value define ty value)
     let node = Section s2
     update_sizes node
-    string_of_node2 cols node
+    string_of_node cols node
 
-let print_value define cols ty value = fst (print_value2 define cols ty value)
+let print_value define cols ty value = print_value_colored define cols ty value
 
 let print_definition (define : tyenv) cols name (info : value_info) value =
     let sxn1 = Section.Create(Flow, 0)
@@ -443,7 +438,7 @@ let print_definition (define : tyenv) cols name (info : value_info) value =
     sxn2.Add(node_of_value define info.vi_type value)
     let node = Section sxn2
     update_sizes node
-    string_of_node cols node
+    fst (string_of_node cols node)
 
 let string_of_kind lang kind upper =
     match lang with
@@ -495,7 +490,7 @@ let print_typechk_error lang cols desc =
             s.Add "was expected."
             let node = Section s
             update_sizes node
-            string_of_node cols node
+            fst (string_of_node cols node)
         | Multiple_occurence (kind, name, defkind) -> sprintf "%s %s occurs multiply in %s." (string_of_kind lang kind true) name (string_of_kind lang defkind false)
         | Constructor_undefined name -> sprintf "Variant %s is not defined." name
         | Constructor_requires_argument name -> sprintf "Variant %s requires argument." name
@@ -541,7 +536,7 @@ let print_typechk_error lang cols desc =
             s.Add "型である必要があります。"
             let node = Section s
             update_sizes node
-            string_of_node cols node
+            fst (string_of_node cols node)
         | Multiple_occurence (kind, name, defkind) -> sprintf "%s %s が%s中で複数回使われています。" (string_of_kind lang kind true) name (string_of_kind lang defkind false)
         | Constructor_undefined name -> sprintf "コンストラクタ %s は未定義です。" name
         | Constructor_requires_argument name -> sprintf "コンストラクタ %s は引数が必要ですが、引数なしで使われています。" name
@@ -585,7 +580,7 @@ let print_message lang cols (msg : Message) =
         bprintf sb "%s\r\n" (print_typechk_error lang cols err)
         sb.ToString()
     | EvaluationComplete (tyenv, value, ty)->
-        print_value tyenv cols ty value + "\r\n"
+        fst (print_value tyenv cols ty value) + "\r\n"
     | NewValues (tyenv, new_values) ->
         let sb = new StringBuilder()
         for name, value, info in new_values do
