@@ -2,56 +2,74 @@
 
 open System.Collections.Immutable
 
+type alloc_info = { ofs : int; access : access; is_capture : bool }
+
 type alloc = 
-    { mutable EnvSize : int // size of env
-      mutable Locals : ImmutableDictionary<string, int * access> // variables in local scope
-      OuterLocals : ImmutableDictionary<string, int * access> list // variables in outer local scope
-      mutable Captured : ImmutableDictionary<string, int * access> // variables captured from outer local scope
-                                                        }
+    { mutable EnvSize : int
+      mutable MaxEnvSize : int
+      mutable CaptureSize : int
+      mutable EnvBindings : ImmutableDictionary<string, alloc_info>
+      mutable Captures : ImmutableDictionary<string, alloc_info * alloc_info>
+      Parent : alloc option }
+    
     static member Create() = 
         { EnvSize = 0
-          Locals = ImmutableDictionary.Empty
-          OuterLocals =  []
-          Captured = ImmutableDictionary.Empty }
+          MaxEnvSize = 0
+          CaptureSize = 0
+          EnvBindings = ImmutableDictionary.Empty
+          Captures = ImmutableDictionary.Empty
+          Parent = None }
     
     member this.Allocate() = 
         let ofs = this.EnvSize
         this.EnvSize <- this.EnvSize + 1
+        this.MaxEnvSize <- max this.MaxEnvSize this.EnvSize
         ofs
     
-    member this.Get(name : string) = 
-        match this.Locals.TryGetValue(name) with
+    member this.AllocateCapture() =
+        let ofs = this.CaptureSize
+        this.CaptureSize <- this.CaptureSize + 1
+        ofs
+
+    member this.Get(name : string) : alloc_info = 
+        match this.EnvBindings.TryGetValue(name) with
         | true, info -> info
-        | false, _ -> 
-            match this.Captured.TryGetValue(name) with
-            | true, info -> info
-            | false, _ ->
-                let rec loop (l : ImmutableDictionary<string, int * access> list) =
-                    match l with
-                    | h :: t ->
-                        match h.TryGetValue(name) with
-                        | true, (_, access) -> 
-                            let ofs = this.Allocate()
-                            let info = (ofs, access)
-                            this.Captured <- this.Captured.SetItem(name, info)
-                            info
-                        | false, _ -> loop t
-                    | [] -> dontcare()
-                loop this.OuterLocals
+        | false, _ ->
+            match this.Captures.TryGetValue(name) with
+            | true, (_, info) -> info
+            | _ ->
+                let ofs_to = this.AllocateCapture()
+                let info_from = this.Parent.Value.Get(name)
+                let info_to = { ofs = ofs_to; access = info_from.access; is_capture = true }
+                this.Captures <- this.Captures.SetItem(name, (info_from, info_to))
+                info_to
     
-    member this.Add(name : string, access) = 
+    member this.Add(name : string, access : access) : int = 
         let ofs = this.Allocate()
-        this.Locals <- this.Locals.SetItem(name, (ofs, access))
+        this.EnvBindings <- this.EnvBindings.SetItem(name, { ofs = ofs; access = access; is_capture = false })
         ofs
+    
+    member this.Begin() = (this.EnvSize, this.EnvBindings)
+
+    member this.End(env_at_begin) =
+        let size, bindings = env_at_begin
+        this.EnvSize <- size
+        this.EnvBindings <- bindings
 
     member this.CreateNewEnv() = 
         { EnvSize = 0
-          Locals = ImmutableDictionary.Empty
-          Captured = ImmutableDictionary.Empty
-          OuterLocals = this.Locals :: this.OuterLocals }
+          MaxEnvSize = 0
+          CaptureSize = 0
+          EnvBindings = ImmutableDictionary.Empty
+          Captures = ImmutableDictionary.Empty
+          Parent = Some this }
     
     member this.Clone() =
+        if this.Parent.IsSome then dontcare()
+
         { EnvSize = this.EnvSize
-          Locals = this.Locals
-          Captured = this.Captured
-          OuterLocals = this.OuterLocals }
+          MaxEnvSize = this.MaxEnvSize
+          CaptureSize = this.CaptureSize
+          EnvBindings = this.EnvBindings
+          Captures = this.Captures
+          Parent = this.Parent }

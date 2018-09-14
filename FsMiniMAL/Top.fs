@@ -27,7 +27,7 @@ let tyenv_std, alloc_std, genv_std =
 
     add_builtin "compare" ty_vvi 2 builtin_id.COMPARE
     add_builtin "try_compare" ty_vvi 2 builtin_id.TRY_COMPARE
-    add_builtin "kprintf" (arrow2 (arrow ty_string b) (Tconstr (type_id.FORMAT, [a; b])) a) (-1) builtin_id.KPRINTF
+    add_builtin "kprintf" (arrow2 (arrow ty_string b) (Tconstr (type_id.FORMAT, [a; b])) a) (2) builtin_id.KPRINTF
     add_builtin "sleep" (arrow ty_float ty_unit) 1 builtin_id.SLEEP
 
     add_builtin "=" ty_vvb 2 builtin_id.EQUAL
@@ -71,14 +71,14 @@ let tyenv_std, alloc_std, genv_std =
         | _ -> dontcare()
     add_func ".<-" ty_unit 3 setfield_func
 
-    let func_ii (func : int -> int) (rt : runtime) (argv : value array) =
+    let func_ii (f : int -> int) (rt : runtime) (argv : value array) =
         let a = to_int argv.[0]
-        of_int rt (func a)
+        of_int rt (f a)
     
-    let func_iii (func : int -> int -> int) (rt : runtime) (argv : value array) =
+    let func_iii (f : int -> int -> int) (rt : runtime) (argv : value array) =
         let a = to_int argv.[0]
         let b = to_int argv.[1]
-        of_int rt (func a b)
+        of_int rt (f a b)
     
     let add_iii name (func : int -> int -> int) =
         add_func name ty_iii 2 (func_iii func)
@@ -93,43 +93,37 @@ let tyenv_std, alloc_std, genv_std =
         let ofs = alloc.Add(name, access.Immutable)
         genv <- array_ensure_capacity_exn Int32.MaxValue (ofs + 1) genv
         genv.[ofs] <- value
-    
-    let add_fff name (func : float -> float -> float) =
-        let builtin_func (g : runtime) argv = 
-            match argv with
-            | [| Vfloat (a, _); Vfloat (b, _) |] -> of_float g (func a b)
-            | _ -> dontcare()
-        add_func name ty_fff 2 builtin_func
 
-    let add_ff name (func : float -> float) =
-        let builtin_func (g : runtime) argv = 
-            match argv with
-            | [| Vfloat (a, _) |] -> of_float g (func a)
-            | _ -> dontcare()
-        add_func name ty_ff 1 builtin_func
+    let func_fff (func : float -> float -> float) (rt : runtime) (argv : value array) =
+        let x = to_float argv.[0]
+        let y = to_float argv.[1]
+        of_float rt (func x y)
+
+    let add_fff name (f : float -> float -> float) =
+        add_func name ty_fff 2 (func_fff f)
+
+    let func_ff (f : float -> float) (rt : runtime) (argv : value array) =
+        of_float rt (f (to_float argv.[0]))
+
+    let add_ff name (f : float -> float) =
+        add_func name ty_ff 1 (func_ff f)
     
     let ty_if = arrow ty_int ty_float
-    let add_if name (func : int -> float) =         
-        let builtin_func (g : runtime) argv = 
-            match argv with
-            | [| Vint (n, _) |] -> of_float g (func n)
-            | _ -> dontcare()
-        add_func name ty_if 1 builtin_func
+    let func_if (f : int -> float) (rt : runtime) (argv : value array) =
+        of_float rt (f (to_int argv.[0]))
+    let add_if name (f : int -> float) =         
+        add_func name ty_if 1 (func_if f)
     
     let ty_fi = arrow ty_float ty_int
-    let add_fi name (func : float -> int) =
-        let builtin_func (g : runtime) argv = 
-            match argv with
-            | [| Vfloat (a, _) |] -> of_int g (func a)
-            | _ -> dontcare()
-        add_func name ty_fi 1 builtin_func
-        
-    let add_vvb name (func : value -> value -> bool) =
-        let builtin_func (g : runtime) argv = 
-            match argv with
-            | [| a; b |] -> of_int g (match func a b with false -> 0 | true -> 1)
-            | _ -> dontcare()
-        add_func name ty_vvb 2 builtin_func
+    let func_fi (f : float -> int) (rt : runtime) (argv : value array) =
+        of_int rt (f (to_float argv.[0]))
+    let add_fi name (f : float -> int) =
+        add_func name ty_fi 1 (func_fi f)
+
+    let func_vvb (f : value -> value -> bool) (rt : runtime) (argv : value array) =
+        of_bool (f argv.[0] argv.[1])
+    let add_vvb name (f : value -> value -> bool) =
+        add_func name ty_vvb 2 (func_vvb f)
 
     add_iii "+" ( + )
     add_iii "-" ( - )
@@ -150,26 +144,22 @@ let tyenv_std, alloc_std, genv_std =
     add_fff "**" ( ** )
     add_ff "~-." ( ~- )
 
-    let not_func (g : runtime) argv =
-        match argv with
-        | [| Vint (i, _) |] -> of_int g (match i with 0 -> 1 | 1 -> 0 | _ -> dontcare())
-        | _ -> dontcare()
+    let not_func (rt : runtime) (argv : value array) =
+        of_bool (not (to_bool argv.[0]))
     add_func "not" (arrow ty_bool ty_bool) 1 not_func
     
     let array_create_func (rt : runtime) (argv : value array) =
         let n = to_int argv.[0]
         if n < 0 then mal_failwith rt "array_create: negative length"
         let x = argv.[1]
-        match x with
-        | _ ->
-            let v = array_create rt n
-            match v with
-            | Varray ({ storage = storage } as ary) ->
-                for i = 0 to n - 1 do
-                    storage.[i] <- x
-                ary.count <- n
-                v
-            | _ -> dontcare()
+        let v = array_create rt n
+        match v with
+        | Varray ({ storage = storage } as ary) ->
+            for i = 0 to n - 1 do
+                storage.[i] <- x
+            ary.count <- n
+            v
+        | _ -> dontcare()
     add_func "array_create" (arrow2 ty_int a (ty_array a)) 2 array_create_func 
 
     let array_append_func (rt : runtime) (argv : value array) =
@@ -305,6 +295,18 @@ let tyenv_std, alloc_std, genv_std =
         | _ -> dontcare()
     add_func "string_concat" (arrow (ty_array ty_string) ty_string) 1 string_concat_func
 
+    add_func "string_start_with" (Tarrow ("s", ty_string, Tarrow ("starting", ty_string, ty_bool))) 2
+        (fun (rt : runtime) (argv : value array) ->
+            let s = to_string argv.[0]
+            let starting = to_string argv.[1]
+            of_bool (s.StartsWith(starting)))
+
+    add_func "string_end_with" (Tarrow ("s", ty_string, Tarrow ("ending", ty_string, ty_bool))) 2
+        (fun (rt : runtime) (argv : value array) ->
+            let s = to_string argv.[0]
+            let ending = to_string argv.[1]
+            of_bool (s.EndsWith(ending)))
+
     let print_string_func (rt : runtime) (argv : value array) =
         rt.print_string (to_string argv.[0])
         Value.unit
@@ -434,9 +436,9 @@ let tyenv_std, alloc_std, genv_std =
     let interp = Interpreter(config.Default, tyenv, alloc, genv)
     let src = """
 fun list_append l1 l2 =
-  case (l1, l2) of
-  | (h1 :: t1, l2) -> h1 :: list_append t1 l2
-  | ([], l2) -> l2;
+  case l1, l2 of
+  | h1 :: t1, l2 -> h1 :: list_append t1 l2
+  | [], l2 -> l2;
 
 fun option_may f opt =
   case opt of
@@ -486,7 +488,7 @@ fun string_map_to_array f s =
 fun id x = x;
 fun ignore x = ();
 
-fun kprintfn k fmt = kprintf (fn s -> k ((s : string) ^ "\r\n")) fmt;
+fun kprintfn k fmt = kprintf (fn s -> k (s ^^ "\r\n")) fmt;
 fun printf fmt = kprintf print_string fmt;
 fun printfn fmt = kprintfn print_string fmt;
 fun sprintf fmt = kprintf id fmt;

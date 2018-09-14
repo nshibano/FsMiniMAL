@@ -50,10 +50,11 @@ type token =
   | DOT
   | MINUSGREATER
   | COMMA
+  | STARSTAR
   | STAR
   | RPAREN
   | LPAREN
-  | AMPERSANDAMPERSAND
+  | AMPAMP
   | EQUALEQUAL
   | EQUAL
   | EOF
@@ -62,12 +63,11 @@ type token =
   | CHAR of (char)
   | INT of (string)
   | UNARY of (string)
-  | INFIX4 of (string)
-  | INFIX3 of (string)
+  | MULTDIV of (string)
   | SUBTRACTIVE of (string)
-  | INFIX2 of (string)
-  | INFIX1 of (string)
-  | INFIX0 of (string)
+  | ADDITIVE of (string)
+  | CONCAT of (string)
+  | COMPARE of (string)
   | QUOTED of (string)
   | IDENT of (string)
 type tokenId = 
@@ -120,10 +120,11 @@ type tokenId =
     | TOKEN_DOT
     | TOKEN_MINUSGREATER
     | TOKEN_COMMA
+    | TOKEN_STARSTAR
     | TOKEN_STAR
     | TOKEN_RPAREN
     | TOKEN_LPAREN
-    | TOKEN_AMPERSANDAMPERSAND
+    | TOKEN_AMPAMP
     | TOKEN_EQUALEQUAL
     | TOKEN_EQUAL
     | TOKEN_EOF
@@ -132,12 +133,11 @@ type tokenId =
     | TOKEN_CHAR
     | TOKEN_INT
     | TOKEN_UNARY
-    | TOKEN_INFIX4
-    | TOKEN_INFIX3
+    | TOKEN_MULTDIV
     | TOKEN_SUBTRACTIVE
-    | TOKEN_INFIX2
-    | TOKEN_INFIX1
-    | TOKEN_INFIX0
+    | TOKEN_ADDITIVE
+    | TOKEN_CONCAT
+    | TOKEN_COMPARE
     | TOKEN_QUOTED
     | TOKEN_IDENT
     | TOKEN_end_of_input
@@ -147,38 +147,41 @@ type nonTerminalId =
     | NONTERM_Program
     | NONTERM_Command_list
     | NONTERM_Opt_semi
-    | NONTERM_Definition
+    | NONTERM_Command
     | NONTERM_Value_def
     | NONTERM_Function_def
     | NONTERM_Var_def
     | NONTERM_Equation
     | NONTERM_Expression_def
-    | NONTERM_Expression
-    | NONTERM_Expression_1
-    | NONTERM_Expression_2_list
+    | NONTERM_Expression_5
+    | NONTERM_Expression_4
+    | NONTERM_Expression_3_comma_list
+    | NONTERM_Expression_3
     | NONTERM_Expression_2
+    | NONTERM_Expression_1_list
+    | NONTERM_Expression_1
+    | NONTERM_Expression_3_emptiable_comma_list
+    | NONTERM_Pattern_1_list
+    | NONTERM_Opt_bar
+    | NONTERM_Operator
     | NONTERM_Matching
+    | NONTERM_Opt_when_clause
     | NONTERM_Matching_list
-    | NONTERM_Expression_comma_list
-    | NONTERM_Expr_may_type
     | NONTERM_Label_expr_list
     | NONTERM_Dir_flag
-    | NONTERM_Opt_bar
-    | NONTERM_Opt_when_clause
-    | NONTERM_Pattern_0
-    | NONTERM_Pattern_0_list
-    | NONTERM_Pattern_1
-    | NONTERM_Pattern_2
+    | NONTERM_Pattern_6
+    | NONTERM_Pattern_5_comma_list
+    | NONTERM_Pattern_5
+    | NONTERM_Pattern_4
     | NONTERM_Pattern_3
-    | NONTERM_Pattern
+    | NONTERM_Pattern_2
+    | NONTERM_Pattern_1
+    | NONTERM_Pattern_5_emptiable_comma_list
     | NONTERM_Label_pattern_list
-    | NONTERM_Pattern_comma_list
-    | NONTERM_Pattern_may_type
-    | NONTERM_Operator
-    | NONTERM_Type_expr
-    | NONTERM_Type_star_list
-    | NONTERM_Simple_type
-    | NONTERM_Type_comma_list
+    | NONTERM_Type_expr_2
+    | NONTERM_Type_expr_1_star_list
+    | NONTERM_Type_expr_1
+    | NONTERM_Type_expr_2_comma_list
     | NONTERM_Typedef_list
     | NONTERM_Typedef
     | NONTERM_Typedef_decl
@@ -191,11 +194,11 @@ type nonTerminalId =
     | NONTERM_Type_var_list
     | NONTERM_Lexer_def_list
     | NONTERM_Lexer_def
-    | NONTERM_Lexer_regexp_1
-    | NONTERM_Lexer_regexp_2
     | NONTERM_Lexer_regexp_3
-    | NONTERM_Lexer_charset_1
-    | NONTERM_Lexer_charset_2
+    | NONTERM_Lexer_regexp_2
+    | NONTERM_Lexer_regexp_1
+    | NONTERM_Lexer_charset_list
+    | NONTERM_Lexer_charset
     | NONTERM_Lexer_rule_list
     | NONTERM_Lexer_rule
     | NONTERM_Lexer_rule_args

@@ -214,7 +214,7 @@ let Compile (defs : lex_def list) =
                 let alphabets = GetAlphabets macros clauses
                 let nfa, actions, nfaNodeMap = LexerStateToNfa alphabets macros clauses
                 let ruleStartNode, ruleNodes = NfaToDfa nfaNodeMap nfa
-                perRuleData.Add((name, args, alphabets, ruleStartNode, actions, loc))
+                perRuleData.Add((name, args, alphabets, ruleStartNode, ruleNodes, actions, loc))
                 //System.Console.WriteLine(sprintf "%s %d %d %d" name alphabets.Count nfaNodeMap.Count ruleNodes.Length)
             accu.Add((perRuleData.ToArray()))
     accu.ToArray()

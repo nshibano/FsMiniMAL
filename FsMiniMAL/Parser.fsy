@@ -10,12 +10,11 @@ open ParseHelper
 /* Identifiers, prefixes, infixes */
 %token <string> IDENT
 %token <string> QUOTED
-%token <string> INFIX0
-%token <string> INFIX1
-%token <string> INFIX2
+%token <string> COMPARE
+%token <string> CONCAT
+%token <string> ADDITIVE
 %token <string> SUBTRACTIVE
-%token <string> INFIX3
-%token <string> INFIX4
+%token <string> MULTDIV
 %token <string> UNARY
 
 /* Literals */
@@ -28,32 +27,33 @@ open ParseHelper
 %token EOF
 
 /* Special symbols */
-%token EQUAL                       /* =   */
-%token EQUALEQUAL                  /* ==  */
-%token AMPERSANDAMPERSAND          /* &&  */
-%token LPAREN                      /* (   */
-%token RPAREN                      /* )   */
-%token STAR                        /* *   */
-%token COMMA                       /* ,   */
-%token MINUSGREATER                /* ->  */
-%token DOT                         /* .   */
-%token COLON                       /* :   */
-%token COLONCOLON                  /* ::  */
-%token SEMI                        /* ;   */
-%token LBRACKET                    /* [   */
-%token LBRACKETBAR                 /* [|  */
-%token LESSMINUS                   /* <-  */
-%token COLONEQUAL                  /* :=  */
-%token LESSLESS                    /* <<  */
-%token RBRACKET                    /* ]   */
-%token UNDERSCORE                  /* _   */
-%token LBRACE                      /* {   */
-%token BAR                         /* |   */
-%token BARBAR                      /* ||  */
-%token BARRBRACKET                 /* |]  */
-%token RBRACE                      /* }   */
-%token EXCLAMATION                 /* !   */
-%token QMARK                       /* ?   */
+%token EQUAL        /* =   */
+%token EQUALEQUAL   /* ==  */
+%token AMPAMP       /* &&  */
+%token LPAREN       /* (   */
+%token RPAREN       /* )   */
+%token STAR         /* *   */
+%token STARSTAR     /* **  */
+%token COMMA        /* ,   */
+%token MINUSGREATER /* ->  */
+%token DOT          /* .   */
+%token COLON        /* :   */
+%token COLONCOLON   /* ::  */
+%token SEMI         /* ;   */
+%token LBRACKET     /* [   */
+%token LBRACKETBAR  /* [|  */
+%token LESSMINUS    /* <-  */
+%token COLONEQUAL   /* :=  */
+%token LESSLESS     /* <<  */
+%token RBRACKET     /* ]   */
+%token UNDERSCORE   /* _   */
+%token LBRACE       /* {   */
+%token BAR          /* |   */
+%token BARBAR       /* ||  */
+%token BARRBRACKET  /* |]  */
+%token RBRACE       /* }   */
+%token EXCLAMATION  /* !   */
+%token QMARK        /* ?   */
 
 /* Keywords */
 %token AND
@@ -91,14 +91,14 @@ open ParseHelper
 %nonassoc prec_if
 %nonassoc ELSE BAR
 %right COLONEQUAL LESSLESS
-%right  BARBAR
-%right  AMPERSANDAMPERSAND
-%left  INFIX0 EQUAL EQUALEQUAL          /* comparisons */
-%right INFIX1                           /* concatenations */
-%right COLONCOLON                       /* cons */
-%left  INFIX2 SUBTRACTIVE               /* additives, subtractives */
-%left  STAR INFIX3                      /* multiplicatives */
-%right INFIX4                           /* exponentiations */
+%right BARBAR
+%right AMPAMP
+%left COMPARE EQUAL EQUALEQUAL
+%right CONCAT
+%right COLONCOLON
+%left ADDITIVE SUBTRACTIVE
+%left STAR MULTDIV
+%right STARSTAR
 %nonassoc prec_uminus
 
 %nonassoc prec_deref
@@ -111,21 +111,21 @@ open ParseHelper
 
 %%
 
-Program : 
+Program :
     | Command_list Opt_semi EOF { (List.rev $1, parseState.ParserLocalStore) }
     | EOF                       { ([], parseState.ParserLocalStore) }
 
 Command_list :
-    | Command_list Opt_semi Definition { $3 :: $1 }
-    | Command_list SEMI Expression     { make_cmd parseState (SCexpr $3) :: $1 }
-    | Definition                       { $1 :: [] }
-    | Expression                       { make_cmd parseState (SCexpr $1) :: [] }
+    | Command_list Opt_semi Command  { $3 :: $1 }
+    | Command_list SEMI Expression_5 { make_cmd parseState (SCexpr $3) :: $1 }
+    | Command                        { $1 :: [] }
+    | Expression_5                   { make_cmd parseState (SCexpr $1) :: [] }
 
 Opt_semi :
     | /* Empty */ { () }
     | SEMI        { () }
 
-Definition :
+Command :
     | VAL Value_def                    { make_cmd parseState (SCval $2) }
     | FUN Function_def                 { make_cmd parseState (SCfun $2) }
     | VAR Var_def                      { make_cmd parseState (SCvar $2) }
@@ -136,8 +136,8 @@ Definition :
     | LEX LBRACE Lexer_def_list RBRACE { make_cmd parseState (SClex $3) }
 
 Value_def :
-    | Pattern Expression_def AND Value_def { ($1,$2) :: $4 }
-    | Pattern Expression_def               { [$1,$2] }
+    | Pattern_6 Expression_def AND Value_def { ($1,$2) :: $4 }
+    | Pattern_6 Expression_def               { [$1,$2] }
 
 Function_def :
     | IDENT Equation AND Function_def { ($1,$2) :: $4 }
@@ -148,187 +148,198 @@ Var_def :
     | IDENT Expression_def             { [$1,$2] }
 
 Equation :
-    | Pattern_0_list Expression_def { make_expr parseState (SEfn ($1, $2)) }
+    | Pattern_1_list Expression_def { make_expr parseState (SEfn ($1, $2)) }
 
 Expression_def :
-    | COLON Type_expr EQUAL Expression { make_expr parseState (SEtype ($4,$2)) }
-    | EQUAL Expression                 { $2 }
+    | COLON Type_expr_2 EQUAL Expression_5 { make_expr parseState (SEtype ($4,$2)) }
+    | EQUAL Expression_5                   { $2 }
 
 /* Expressions */
 
-Expression :
-    | FN Pattern_0_list MINUSGREATER Expression %prec prec_if                          { make_expr parseState (SEfn ($2, $4)) }
-    | IDENT LESSMINUS Expression %prec prec_if                                         { make_expr parseState (SEset ($1, $3)) }
-    | Expression_2 DOT LBRACKET Expression RBRACKET LESSMINUS Expression %prec prec_if { make_ternop parseState ".[]<-" $1 $4 $7 }
-    | Expression_2 DOT IDENT LESSMINUS Expression %prec prec_if                        { make_expr parseState (SEsetfield ($1, $3, $5)) }
-    | IF Expression THEN Expression ELSE Expression %prec prec_if                      { make_expr parseState (SEifthenelse ($2, $4, Some $6)) }
-    | IF Expression THEN Expression %prec prec_if                                      { make_expr parseState (SEifthenelse ($2, $4, None)) }
-    | WHILE Expression DO Expression %prec prec_if                                     { make_expr parseState (SEwhile ($2, $4)) }
-    | FOR IDENT EQUAL Expression Dir_flag Expression DO Expression %prec prec_if       { make_expr parseState (SEfor ($2, $4, $5, $6, $8)) }
-    | CASE Expression OF Opt_bar Matching_list                                         { make_expr parseState (SEcase ($2, $5)) }
-    | TRY Expression CATCH Opt_bar Matching_list                                       { make_expr parseState (SEtry ($2, $5)) }
-    | FUNCT Matching_list                                                              { make_expr parseState (SEfn ([make_pat parseState (SPid "$")], make_expr parseState (SEcase (make_expr parseState (SEid "$"), $2)))) }
-    | SUBTRACTIVE Expression %prec prec_uminus                                         { make_minus_expr parseState $1 $2 }
-    | UNARY Expression %prec prec_uminus                                               { make_unop parseState $1 $2 }
-    | Expression INFIX4 Expression                                                     { make_binop parseState $2 $1 $3 }
-    | Expression INFIX3 Expression                                                     { make_binop parseState $2 $1 $3 }
-    | Expression INFIX2 Expression                                                     { make_binop parseState $2 $1 $3 }
-    | Expression SUBTRACTIVE Expression                                                { make_binop parseState $2 $1 $3 }
-    | Expression INFIX1 Expression                                                     { make_binop parseState $2 $1 $3 }
-    | Expression INFIX0 Expression                                                     { make_binop parseState $2 $1 $3 }
-    | Expression EQUAL Expression                                                      { make_binop parseState "=" $1 $3 }
-    | Expression EQUALEQUAL Expression                                                 { make_binop parseState "==" $1 $3 }
-    | Expression STAR Expression                                                       { make_binop parseState "*" $1 $3 }
-    | Expression AMPERSANDAMPERSAND Expression                                         { make_binop parseState "&&" $1 $3 }
-    | Expression BARBAR Expression                                                     { make_binop parseState "||" $1 $3 }
-    | Expression COLONCOLON Expression                                                 { make_unop parseState "::" (make_expr parseState (SEtuple [$1;$3])) }
-    | Expression COLONEQUAL Expression                                                 { make_binop parseState ":=" $1 $3 }
-    | Expression LESSLESS Expression                                                   { make_binop parseState "<<" $1 $3 }
-    | Expression_1                                                                     { $1 }
+Expression_5 :
+    | Expression_4 COLON Type_expr_2 { make_expr parseState (SEtype ($1, $3)) }
+	| Expression_4                   { $1 }
+
+Expression_4 :
+    | Expression_3_comma_list { match $1 with [e] -> e | l -> make_expr parseState (SEtuple l) }
+
+Expression_3_comma_list :
+    | Expression_3 COMMA Expression_3_comma_list { $1 :: $3 }
+    | Expression_3 %prec prec_tuple              { [$1] }
+
+Expression_3 :
+    | FN Pattern_1_list MINUSGREATER Expression_3 %prec prec_if                            { make_expr parseState (SEfn ($2, $4)) }
+    | IDENT LESSMINUS Expression_3 %prec prec_if                                           { make_expr parseState (SEset ($1, $3)) }
+    | Expression_1 DOT LBRACKET Expression_3 RBRACKET LESSMINUS Expression_3 %prec prec_if { make_ternop parseState ".[]<-" $1 $4 $7 }
+    | Expression_1 DOT IDENT LESSMINUS Expression_3 %prec prec_if                          { make_expr parseState (SEsetfield ($1, $3, $5)) }
+    | IF Expression_5 THEN Expression_3 ELSE Expression_3 %prec prec_if                    { make_expr parseState (SEifthenelse ($2, $4, Some $6)) }
+    | IF Expression_5 THEN Expression_3 %prec prec_if                                      { make_expr parseState (SEifthenelse ($2, $4, None)) }
+    | WHILE Expression_5 DO Expression_3 %prec prec_if                                     { make_expr parseState (SEwhile ($2, $4)) }
+    | FOR IDENT EQUAL Expression_5 Dir_flag Expression_5 DO Expression_3 %prec prec_if     { make_expr parseState (SEfor ($2, $4, $5, $6, $8)) }
+    | CASE Expression_5 OF Opt_bar Matching_list                                           { make_expr parseState (SEcase ($2, $5)) }
+    | TRY Expression_5 CATCH Opt_bar Matching_list                                         { make_expr parseState (SEtry ($2, $5)) }
+    | FUNCT Opt_bar Matching_list                                                          { make_expr parseState (SEfn ([make_pat parseState (SPid "$")], make_expr parseState (SEcase (make_expr parseState (SEid "$"), $3)))) }
+    | SUBTRACTIVE Expression_3 %prec prec_uminus                                           { make_minus_expr parseState $1 $2 }
+    | UNARY Expression_3 %prec prec_uminus                                                 { make_unop parseState $1 $2 }
+    | Expression_3 STARSTAR Expression_3                                                   { make_binop parseState "**" $1 $3 }
+    | Expression_3 MULTDIV Expression_3                                                    { make_binop parseState $2 $1 $3 }
+    | Expression_3 ADDITIVE Expression_3                                                   { make_binop parseState $2 $1 $3 }
+    | Expression_3 SUBTRACTIVE Expression_3                                                { make_binop parseState $2 $1 $3 }
+    | Expression_3 CONCAT Expression_3                                                     { make_binop parseState $2 $1 $3 }
+    | Expression_3 COMPARE Expression_3                                                    { make_binop parseState $2 $1 $3 }
+    | Expression_3 EQUAL Expression_3                                                      { make_binop parseState "=" $1 $3 }
+    | Expression_3 EQUALEQUAL Expression_3                                                 { make_binop parseState "==" $1 $3 }
+    | Expression_3 STAR Expression_3                                                       { make_binop parseState "*" $1 $3 }
+    | Expression_3 AMPAMP Expression_3                                                     { make_binop parseState "&&" $1 $3 }
+    | Expression_3 BARBAR Expression_3                                                     { make_binop parseState "||" $1 $3 }
+    | Expression_3 COLONCOLON Expression_3                                                 { make_unop parseState "::" (make_expr parseState (SEtuple [$1;$3])) }
+    | Expression_3 COLONEQUAL Expression_3                                                 { make_binop parseState ":=" $1 $3 }
+    | Expression_3 LESSLESS Expression_3                                                   { make_binop parseState "<<" $1 $3 }
+    | Expression_2                                                                         { $1 }
+
+Expression_2 :
+    | Expression_1_list { match $1 with [e] -> e | hd :: tl -> make_expr parseState (SEapply (hd, tl)) | [] -> raise (exn()) }
+
+Expression_1_list :
+    | Expression_1 Expression_1_list { $1 :: $2 }
+    | Expression_1                   { [$1] }
 
 Expression_1 :
-    | Expression_2_list { match $1 with [e] -> e | hd :: tl -> make_expr parseState (SEapply (hd, tl)) | [] -> raise (exn()) }
+    | IDENT                                                     { make_expr parseState (SEid $1) }
+    | STRING                                                    { make_string parseState $1 }
+    | INT                                                       { make_expr parseState (SEint $1) }
+    | CHAR                                                      { make_expr parseState (SEchar $1) }
+    | FLOAT                                                     { make_expr parseState (SEfloat $1) }
+    | EXCLAMATION Expression_1 %prec prec_deref                 { make_unop parseState "!" $2 }
+    | Expression_1 DOT IDENT                                    { make_expr parseState (SEgetfield ($1, $3)) }
+    | Expression_1 DOT LBRACKET Expression_3 RBRACKET           { make_binop parseState ".[]" $1 $4 }
+    | LPAREN RPAREN                                             { make_expr parseState (SEtuple []) }
+    | LPAREN Expression_5 RPAREN                                { $2 }
+    | LPAREN Operator RPAREN                                    { make_ident parseState $2 }
+    | LBRACKETBAR Expression_3_emptiable_comma_list BARRBRACKET { make_expr parseState (SElist (LKarray, $2)) }
+    | LBRACKET Expression_3_emptiable_comma_list RBRACKET       { make_expr parseState (SElist (LKlist, $2)) }
+    | LBRACE Label_expr_list RBRACE                             { make_expr parseState (SErecord (None, $2)) }
+    | LBRACE Expression_2 WITH Label_expr_list RBRACE           { make_expr parseState (SErecord (Some $2, $4)) }
+    | BEGIN Command_list Opt_semi END                           { make_expr parseState (SEbegin (List.rev $2)) }
+    | BEGIN END                                                 { make_expr parseState (SEbegin []) }
 
-Expression_2_list :
-    | Expression_2 Expression_2_list { $1 :: $2 }
-    | Expression_2                   { [$1] }
+Expression_3_emptiable_comma_list :
+    | Expression_3_comma_list { $1 }
+    | /* empty */             { [] }
 
-Expression_2:
-    | IDENT                                           { make_expr parseState (SEid $1) }
-    | STRING                                          { make_string parseState $1 }
-    | INT                                             { make_expr parseState (SEint $1) }
-    | CHAR                                            { make_expr parseState (SEchar $1) }
-    | FLOAT                                           { make_expr parseState (SEfloat $1) }
-    | EXCLAMATION Expression_2 %prec prec_deref       { make_unop parseState "!" $2 }
-    | Expression_2 DOT IDENT                          { make_expr parseState (SEgetfield ($1, $3)) }
-    | Expression_2 DOT LBRACKET Expression RBRACKET   { make_binop parseState ".[]" $1 $4 }
-    | LPAREN Expression_comma_list RPAREN             { match $2 with [e] -> e | l -> make_expr parseState (SEtuple l) }
-    | LPAREN Operator RPAREN                          { make_ident parseState $2 }
-    | LBRACKETBAR Expression_comma_list BARRBRACKET   { make_expr parseState (SEarray $2) }
-    | LBRACKET Expression_comma_list RBRACKET         { List.foldBack (fun a l -> make_unop parseState "::" (make_expr parseState (SEtuple [a;l]))) $2 (make_ident parseState "[]") }
-    | LBRACE Label_expr_list RBRACE                   { make_expr parseState (SErecord (None, $2)) }
-    | LBRACE Expression_1 WITH Label_expr_list RBRACE { make_expr parseState (SErecord (Some $2, $4)) }
-    | BEGIN Command_list Opt_semi END                 { make_expr parseState (SEbegin (List.rev $2)) }
-    | BEGIN END                                       { make_expr parseState (SEbegin []) }
-
-Matching : 
-    | Pattern Opt_when_clause MINUSGREATER Expression %prec prec_if { ($1, $2, $4) }
-
-Matching_list :
-    | Matching BAR Matching_list { $1 :: $3 }
-    | Matching %prec prec_if  { [$1] }
-
-Expression_comma_list :
-    | Expr_may_type COMMA Expression_comma_list { $1 :: $3 }
-    | Expr_may_type                             { [$1] }
-    | /* empty */                               { [] }
-
-Expr_may_type :
-      | Expression COLON Type_expr { make_expr parseState (SEtype ($1, $3)) }
-      | Expression                 { $1 }
-
-Label_expr_list :
-    | IDENT EQUAL Expression COMMA Label_expr_list { ($1, $3) :: $5 }
-    | IDENT EQUAL Expression                       { [$1, $3] }
-
-Dir_flag :
-    | TO     { dirflag.Upto }
-    | DOWNTO { dirflag.Downto }
+Pattern_1_list :
+    | Pattern_1 Pattern_1_list { $1 :: $2 }
+    | Pattern_1                { $1 :: [] }
 
 Opt_bar :
     | /* Empty */ { () }
     | BAR         { () }
 
+Operator :
+    | COMPARE     { $1 }
+    | CONCAT      { $1 }    
+    | ADDITIVE    { $1 }
+    | MULTDIV     { $1 }    
+    | STARSTAR    { "**" }
+    | SUBTRACTIVE { $1 }
+    | UNARY       { $1 }
+    | STAR        { "*" }   
+    | EQUAL       { "=" }   
+    | AMPAMP      { "&&" }   
+    | BARBAR      { "||" }
+    | EQUALEQUAL  { "==" }
+    | COLONEQUAL  { ":=" }
+    | EXCLAMATION { "!" }
+    | LESSLESS    { "<<" }
+
+Matching : 
+    | Pattern_6 Opt_when_clause MINUSGREATER Expression_3 %prec prec_if { ($1, $2, $4) }
+
 Opt_when_clause :
-    | /* empty */     { None }
-    | WHEN Expression { Some $2 }
+    | /* empty */       { None }
+    | WHEN Expression_4 { Some $2 }
+
+Matching_list :
+    | Matching BAR Matching_list { $1 :: $3 }
+    | Matching %prec prec_if     { [$1] }
+
+Label_expr_list :
+    | IDENT EQUAL Expression_3 COMMA Label_expr_list { ($1, $3) :: $5 }
+    | IDENT EQUAL Expression_3                       { [$1, $3] }
+
+Dir_flag :
+    | TO     { dirflag.Upto }
+    | DOWNTO { dirflag.Downto }
 
 /* Patterns */
 
-Pattern_0 :
-    | IDENT                                       { make_pat parseState (SPid $1) }
-    | UNDERSCORE                                  { make_pat parseState SPany }
-    | STRING                                      { make_pat_string parseState $1 }
-    | INT                                         { make_pat parseState (SPint $1) }
-    | CHAR                                        { make_pat parseState (SPchar $1) }
-    | FLOAT                                       { make_pat parseState (SPfloat $1) }
-    | SUBTRACTIVE INT                             { make_pat parseState (SPint(make_minus $2)) }
-    | SUBTRACTIVE FLOAT                           { make_pat parseState (SPfloat(- $2)) }
-    | LPAREN Pattern_comma_list RPAREN            { match $2 with [pat] -> pat | l -> make_pat parseState (SPtuple l) }
-    | LBRACKET Pattern_comma_list RBRACKET        { List.foldBack (make_cons_pat parseState) $2 { sp_desc = SPid "[]" ; sp_loc = get_loc parseState } }
-    | LBRACKETBAR Pattern_comma_list BARRBRACKET  { make_pat parseState (SParray $2) }
-    | LBRACE Label_pattern_list RBRACE            { make_pat parseState (SPrecord $2) }
+Pattern_6 :
+    | Pattern_5_comma_list { match $1 with [pat] -> pat | l -> make_pat parseState (SPtuple l)  }
 
-Pattern_0_list :
-    | Pattern_0 Pattern_0_list { $1 :: $2 }
-    | Pattern_0                { $1 :: [] }
+Pattern_5_comma_list :
+    | Pattern_5 COMMA Pattern_5_comma_list { $1 :: $3 }
+    | Pattern_5                            { $1 :: [] }
 
-Pattern_1 :
-    | Pattern_0       { $1 }
-    | IDENT Pattern_0 { make_pat parseState (SPapply ($1, $2)) }
+Pattern_5 :
+    | Pattern_4          { $1 }
+    | Pattern_4 AS IDENT { make_pat parseState (SPas ($1, $3)) }
 
-Pattern_2 :
-    | Pattern_1                      { $1 }
-    | Pattern_1 COLONCOLON Pattern_2 { make_cons_pat parseState $1 $3 }
+Pattern_4 :
+    | Pattern_3               { $1 }
+    | Pattern_4 BAR Pattern_3 { make_pat parseState (SPor($1, $3)) }
 
 Pattern_3 :
-    | Pattern_2               { $1 }
-    | Pattern_3 BAR Pattern_2 { make_pat parseState (SPor($1, $3)) }
+    | Pattern_2                      { $1 }
+    | Pattern_2 COLONCOLON Pattern_3 { make_cons_pat parseState $1 $3 }
 
-Pattern :
-    | Pattern_3          { $1 }
-    | Pattern_3 AS IDENT { make_pat parseState (SPas ($1, $3)) }
+Pattern_2 :
+    | Pattern_1       { $1 }
+    | IDENT Pattern_1 { make_pat parseState (SPapply ($1, $2)) }
+
+Pattern_1 :
+    | IDENT                                                  { make_pat parseState (SPid $1) }
+    | UNDERSCORE                                             { make_pat parseState SPany }
+    | STRING                                                 { make_pat_string parseState $1 }
+    | INT                                                    { make_pat parseState (SPint $1) }
+    | CHAR                                                   { make_pat parseState (SPchar $1) }
+    | FLOAT                                                  { make_pat parseState (SPfloat $1) }
+    | SUBTRACTIVE INT                                        { make_pat parseState (SPint(make_minus $2)) }
+    | SUBTRACTIVE FLOAT                                      { make_pat parseState (SPfloat(- $2)) }
+    | LPAREN RPAREN                                          { make_pat parseState (SPtuple []) }
+    | LPAREN Pattern_6 RPAREN                                { $2 }
+    | LPAREN Pattern_6 COLON Type_expr_2 RPAREN              { make_pat parseState (SPtype ($2, $4)) }
+    | LBRACKET Pattern_5_emptiable_comma_list RBRACKET       { List.foldBack (make_cons_pat parseState) $2 { sp_desc = SPid "[]" ; sp_loc = get_loc parseState } }
+    | LBRACKETBAR Pattern_5_emptiable_comma_list BARRBRACKET { make_pat parseState (SParray $2) }
+    | LBRACE Label_pattern_list RBRACE                       { make_pat parseState (SPrecord $2) }
+
+Pattern_5_emptiable_comma_list :
+    | Pattern_5_comma_list { $1 }
+    | /* empty */          { [] }
 
 Label_pattern_list :
-    | IDENT EQUAL Pattern COMMA Label_pattern_list { ($1, $3) :: $5 }
-    | IDENT EQUAL Pattern                          { ($1, $3) :: [] }
-
-Pattern_comma_list :
-    | Pattern_may_type COMMA Pattern_comma_list { $1 :: $3 }
-    | Pattern_may_type                          { $1 :: [] }
-    | /* empty */                               { [] }
-
-Pattern_may_type :
-    | Pattern COLON Type_expr { make_pat parseState (SPtype ($1, $3)) }
-    | Pattern                 { $1 }
-
-Operator :
-    | INFIX0             { $1 }
-    | INFIX1             { $1 }    
-    | INFIX2             { $1 }
-    | INFIX3             { $1 }    
-    | INFIX4             { $1 }
-    | SUBTRACTIVE        { $1 }
-    | UNARY              { $1 }
-    | STAR               { "*" }   
-    | EQUAL              { "=" }   
-    | AMPERSANDAMPERSAND { "&&" }   
-    | BARBAR             { "||" }
-    | EQUALEQUAL         { "==" }
-    | COLONEQUAL         { ":=" }
-    | EXCLAMATION        { "!" }
-    | LESSLESS           { "<<" }
+    | IDENT EQUAL Pattern_5 COMMA Label_pattern_list { ($1, $3) :: $5 }
+    | IDENT EQUAL Pattern_5                          { ($1, $3) :: [] }
 
 /* Type expressions */
 
-Type_expr :
-    | Type_star_list MINUSGREATER Type_expr { make_typ parseState (STarrow(type_expr_of_type_star_list parseState $1, $3)) }
-    | Type_star_list                        { type_expr_of_type_star_list parseState $1 }
+Type_expr_2 :
+    | Type_expr_1_star_list MINUSGREATER Type_expr_2 { make_typ parseState (STarrow(type_expr_of_type_star_list parseState $1, $3)) }
+    | Type_expr_1_star_list                          { type_expr_of_type_star_list parseState $1 }
 
-Type_star_list :
-    | Type_star_list STAR Simple_type { $3 :: $1 }
-    | Simple_type                     { [$1] }
+Type_expr_1_star_list :
+    | Type_expr_1_star_list STAR Type_expr_1 { $3 :: $1 }
+    | Type_expr_1                            { [$1] }
 
-Simple_type :
-    | QUOTED                                              { make_typ parseState (STvar $1) }
-    | IDENT                                               { mark_as_typename parseState 1; make_typ parseState (STconstr($1, [])) }
-    | Simple_type IDENT                                   { mark_as_typename parseState 2; make_typ parseState (STconstr($2, [$1])) }
-    | LPAREN Type_expr COMMA Type_comma_list RPAREN IDENT { mark_as_typename parseState 6; make_typ parseState (STconstr($6, $2 :: $4)) }
-    | LPAREN Type_expr RPAREN                             { $2 }
+Type_expr_1 :
+    | QUOTED                                                       { make_typ parseState (STvar $1) }
+    | IDENT                                                        { mark_as_typename parseState 1; make_typ parseState (STconstr($1, [])) }
+    | Type_expr_1 IDENT                                            { mark_as_typename parseState 2; make_typ parseState (STconstr($2, [$1])) }
+    | LPAREN Type_expr_2 COMMA Type_expr_2_comma_list RPAREN IDENT { mark_as_typename parseState 6; make_typ parseState (STconstr($6, $2 :: $4)) }
+    | LPAREN Type_expr_2 RPAREN                                    { $2 }
 
-Type_comma_list :
-    | Type_expr COMMA Type_comma_list { $1 :: $3 }
-    | Type_expr                       { [$1] }
+Type_expr_2_comma_list :
+    | Type_expr_2 COMMA Type_expr_2_comma_list { $1 :: $3 }
+    | Type_expr_2                              { [$1] }
 
 /* Declarations */
 
@@ -337,37 +348,36 @@ Typedef_list :
     | Typedef                  { [$1] }
 
 Typedef :
-    | Type_params IDENT Typedef_decl { mark_as_typename parseState 2
-                                       make_typedef parseState $1 $2 $3 }
+    | Type_params IDENT Typedef_decl { mark_as_typename parseState 2; make_typedef parseState $1 $2 $3 }
 
 Typedef_decl :
     | EQUAL Opt_bar Constr_decl      { SKvariant $3 }
     | EQUAL LBRACE Label_decl RBRACE { SKrecord $3 }
-    | EQUALEQUAL Type_expr           { SKabbrev $2 }
+    | EQUALEQUAL Type_expr_2         { SKabbrev $2 }
 
 Constr_decl :
     | Constr1_decl BAR Constr_decl { $1 :: $3 }
     | Constr1_decl                 { [$1] }
 
 Constr1_decl :
-    | IDENT OF Type_star_list { ($1, List.rev $3) }
-    | IDENT                   { ($1, []) }
+    | IDENT OF Type_expr_1_star_list { ($1, List.rev $3) }
+    | IDENT                          { ($1, []) }
 
 Label_decl :
     | Label1_decl COMMA Label_decl { $1 :: $3 }
     | Label1_decl                  { [$1] }
 
 Label1_decl :
-    | Opt_mutable IDENT COLON Type_expr { ($2, $4, $1) }
+    | Opt_mutable IDENT COLON Type_expr_2 { ($2, $4, $1) }
 
 Opt_mutable :
-    | MUTABLE       { access.Mutable }
-    | /* epsilon */ { access.Immutable }
+    | MUTABLE     { access.Mutable }
+    | /* empty */ { access.Immutable }
 
 Type_params :
     | LPAREN Type_var_list RPAREN { $2 }
     | QUOTED                      { [$1] }
-    | /* epsilon */               { [] }
+    | /* empty */                 { [] }
 
 Type_var_list :
     | QUOTED COMMA Type_var_list { $1 :: $3 }
@@ -376,39 +386,39 @@ Type_var_list :
 /* Lexer definitions */
 
 Lexer_def_list :
-    | /* epsilon */                     { [] }
+    | /* empty */                       { [] }
     | Lexer_def Opt_semi Lexer_def_list { $1 :: $3 }
 
 Lexer_def :
-    | VAL IDENT EQUAL Lexer_regexp_1 { Macro_def ($2, $4) }
+    | VAL IDENT EQUAL Lexer_regexp_3 { Macro_def ($2, $4) }
     | FUN Lexer_rule_list            { Rules_def $2 }
 
-Lexer_regexp_1 :
-    | Lexer_regexp_1 BAR Lexer_regexp_2 { Alt [$1;$3]  }
+Lexer_regexp_3 :
+    | Lexer_regexp_3 BAR Lexer_regexp_2 { Alt [$1;$3]  }
     | Lexer_regexp_2                    { $1 }
-    | /* epsilon */                     { Seq [] }
+    | /* empty */                       { Seq [] }
 
 Lexer_regexp_2 :
-    | Lexer_regexp_2 Lexer_regexp_3 { Seq [$1; $2] }
-    | Lexer_regexp_3                { $1 }
+    | Lexer_regexp_2 Lexer_regexp_1 { Seq [$1; $2] }
+    | Lexer_regexp_1                { $1 }
 
-Lexer_regexp_3 :
-    | Lexer_regexp_3 INFIX2                    { Seq[$1;Star $1] }
-    | Lexer_regexp_3 STAR                      { Star $1 }
-    | Lexer_regexp_3 QMARK                     { Alt[Seq[];$1] }
-    | CHAR                                     { Inp (Alphabet (int $1)) }
-    | UNDERSCORE                               { Inp Any }
-    | STRING                                   { Seq ([for c in $1 -> Inp (Alphabet (int c))]) }
-    | IDENT                                    { Macro $1 }
-    | LPAREN Lexer_regexp_1 RPAREN             { $2 }
-    | LBRACKET Lexer_charset_1 RBRACKET        { Alt ([for c in $2 -> Inp (Alphabet c)]) }
-    | LBRACKET INFIX1 Lexer_charset_1 RBRACKET { Inp(NotCharSet($3)) }
+Lexer_regexp_1 :
+    | Lexer_regexp_1 ADDITIVE                     { Seq[$1;Star $1] }
+    | Lexer_regexp_1 STAR                         { Star $1 }
+    | Lexer_regexp_1 QMARK                        { Alt[Seq[];$1] }
+    | CHAR                                        { Inp (Alphabet (int $1)) }
+    | UNDERSCORE                                  { Inp Any }
+    | STRING                                      { Seq ([for c in $1 -> Inp (Alphabet (int c))]) }
+    | IDENT                                       { Macro $1 }
+    | LPAREN Lexer_regexp_3 RPAREN                { $2 }
+    | LBRACKET Lexer_charset_list RBRACKET        { Alt ([for c in $2 -> Inp (Alphabet c)]) }
+    | LBRACKET CONCAT Lexer_charset_list RBRACKET { Inp(NotCharSet($3)) }
 
-Lexer_charset_1 :
-    | Lexer_charset_1 Lexer_charset_2 { Set.union $1 $2 }
-    | Lexer_charset_2                 { $1 }
+Lexer_charset_list :
+    | Lexer_charset_list Lexer_charset { Set.union $1 $2 }
+    | Lexer_charset                    { $1 }
 
-Lexer_charset_2 :
+Lexer_charset :
     | CHAR                  { Set.singleton (int $1) }
     | CHAR SUBTRACTIVE CHAR { Set.ofSeq [ for c in $1 .. $3 -> int c ] }
 
@@ -420,12 +430,12 @@ Lexer_rule :
     | IDENT Lexer_rule_args EQUAL Lexer_rule_case_list { ($1, $2, $4, get_loc parseState) }
 
 Lexer_rule_args :
-    | /* epsilon */         { [] }
+    | /* empty */           { [] }
     | IDENT Lexer_rule_args { $1 :: $2 }
 
 Lexer_rule_case_list :
-    | /* epsilon */                        { [] }
+    | /* empty */                          { [] }
     | Lexer_rule_case Lexer_rule_case_list { $1 :: $2 }
 
 Lexer_rule_case :
-    | Lexer_regexp_1 LBRACE Expression RBRACE { ($1, $3) }
+    | Lexer_regexp_3 LBRACE Expression_5 RBRACE { ($1, $3) }

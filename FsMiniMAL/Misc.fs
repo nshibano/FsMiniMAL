@@ -4,18 +4,17 @@ module FsMiniMAL.Misc
 open System
 open System.Collections.Generic
 open System.Collections.Immutable
-open System.Text
 open System.Text.RegularExpressions
-open FsMiniMAL.Lexing
 
 type FsMiniMAL.Lexing.LexBuffer<'T> with
-    member lexbuf.Range = (lexbuf.StartPos, lexbuf.EndPos)
     member lexbuf.NewLine() = lexbuf.EndPos <- lexbuf.EndPos.NextLine
 
 type System.Text.StringBuilder with
     member sb.Add(c : char) = sb.Append(c) |> ignore
     member sb.Add(c : char, n : int) = sb.Append(c, n) |> ignore
     member sb.Add(s : string) = sb.Append(s) |> ignore
+
+let dummy_file_name = "//"
 
 type dirflag = 
     | Upto

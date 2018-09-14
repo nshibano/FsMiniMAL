@@ -1,7 +1,6 @@
 ﻿module FsMiniMAL.Typechk
 
 open System
-open System.Text.RegularExpressions
 open System.Collections.Generic
 open System.Collections.Immutable
 
@@ -59,6 +58,7 @@ type type_error_desc =
     // Warnings
     | Partially_applied
     | Useless_with_clause
+    | Lexer_created of name : string * state_count : int
 
 type warning_sink = (type_error_desc * location) -> unit
 
@@ -76,14 +76,14 @@ let generic_level = -1
 
 let new_tvar level = Tvar { link = None; level = level; }
 
-let re_constructor = Regex(@"\A[A-Z][A-Za-z0-9_']*\Z")
-let is_constructor s =
-    match s with
-        | "true"
-        | "false"
-        | "::"
-        | "[]" -> true
-        | _ -> re_constructor.IsMatch(s)
+let is_constructor (s : string) =
+    let c = s.[0]
+    match c with
+    | 't' -> s = "true"
+    | 'f' -> s = "false"
+    | ':' -> s = "::"
+    | '[' -> s = "[]"
+    | _ -> Char.IsUpper(c)
 
 let rec get_pattern_name (pat : Syntax.pattern) =
     match pat.sp_desc with
@@ -486,9 +486,9 @@ and pattern_list tyenv (type_vars : Dictionary<string, type_expr>) current_level
 let rec is_nonexpansive (e : Syntax.expression) =
     match e.se_desc with
     | SEid _ | SEint _ | SEchar _ | SEfloat _ | SEstring _ | SEformat _ | SEfn _ -> true
-    | SEarray _ | SEapply _ | SEset _ -> false
+    | SElist (LKarray, _) | SEapply _ | SEset _ -> false
     | SEconstr (_, l) -> List.forall is_nonexpansive l
-    | SEtuple l -> List.forall is_nonexpansive l
+    | SEtuple l | SElist (LKlist, l) -> List.forall is_nonexpansive l
     | SEurecord (fields, orig) ->
         (match orig with None -> true | Some e -> is_nonexpansive e) &&
         List.forall (fun (_, access, e) -> access = Immutable && is_nonexpansive e) fields
@@ -562,7 +562,6 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
             match try_get_value tyenv s with
             | Some info -> instanciate_scheme current_level info.vi_type
             | None -> raise (Type_error (Unbound_identifier s, e.se_loc))
-    | SEconstr _ -> dontcare()
     | SEint s ->
         try int s |> ignore
         with :? System.OverflowException -> raise (Type_error (Integer_literal_overflow, e.se_loc))
@@ -575,7 +574,7 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
             | Some (Ttuple tyl) when tyl.Length = el.Length -> List.map (fun ty -> Some ty) tyl
             | _ -> List.init el.Length (fun _ -> None)
         Ttuple (List.map2 (expression warning_sink tyenv type_vars current_level) tyl_hint el)
-    | SEarray el ->
+    | SElist (kind, el) ->
         let ty_item_hint =
             match option_repr ty_hint with
             | Some (Tconstr (type_id.ARRAY, [ty_arg])) -> Some ty_arg
@@ -583,7 +582,8 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
         let tyl_items = List.map (expression warning_sink tyenv type_vars current_level ty_item_hint) el
         let ty_accu = new_tvar current_level
         List.iter2 (fun e ty -> unify_exp tyenv e ty ty_accu) el tyl_items
-        Tconstr (type_id.ARRAY, [ ty_accu ])
+        let id = match kind with LKlist -> type_id.LIST | LKarray -> type_id.ARRAY
+        Tconstr (id, [ ty_accu ])
     | SEstring s ->
         match option_repr ty_hint with
         | Some (Tconstr (type_id.FORMAT, _)) ->
@@ -655,79 +655,113 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
 
         e.se_desc <- SEurecord ((List.map (fun (_, idx, _, access, e) -> (idx, access, e)) fields), orig)
         ty_res
-    | SEurecord _ -> dontcare ()
-    | SEapply ((({ se_desc = SEid s } as e1)), el) when is_constructor s ->
-        match pick_constr tyenv ty_hint s with
-        | None -> raise (Type_error (Constructor_undefined s, e1.se_loc))
-        | Some info ->
-            let ty_args, ty_res = instanciate_constr current_level info
-            let e_args =
-                match el with
-                | [e] -> e
-                | [] -> dontcare()
-                | _ -> raise (Type_error (Multiple_arguments_to_constructor_must_be_tupled, e1.se_loc))
-            match ty_args, e_args with
-            | [], _ -> raise (Type_error(Constructor_takes_no_argument s, e1.se_loc))
-            | [ty_arg], _ ->
-                expression_expect warning_sink tyenv type_vars current_level ty_arg e_args
-                e.se_desc <- SEconstr (info.ci_tag, [e_args])
-                ty_res
-            | _, { se_desc = SEtuple el } ->
-                if List.length el = List.length ty_args then
-                    List.iter2 (expression_expect warning_sink tyenv type_vars current_level) ty_args el
-                    e.se_desc <- SEconstr (info.ci_tag, el)
-                    ty_res
-                else raise (Type_error(Constructor_used_with_wrong_number_of_arguments (s, ty_args.Length, el.Length), e1.se_loc))
-            | _, _ -> raise (Type_error(Constructor_used_with_wrong_number_of_arguments (s, ty_args.Length, 1), e1.se_loc))
-    | SEapply (({ se_desc = SEid (("+" | "-" | "*" | "/" | "~-") as op) } as e_op), el_args) when let op_arity = if op = "~-" then 1 else 2
-                                                                                                  let el_args_len = el_args.Length
-                                                                                                  op_arity - el_args_len >= 0 ->
-        let op_arity = if op = "~-" then 1 else 2
-        let el_args_len = el_args.Length
-        let ty_float_res, ty_int_res =
-            if op_arity - el_args_len = 0 then
-                ty_float, ty_int
-            else // = 1
-                ty_ff, ty_ii
-        let tyl_args = List.map (fun e -> expression warning_sink tyenv type_vars current_level None e) el_args
-        let mutable float_count = 0
-        let mutable tvar_count = 0
-        for ty in tyl_args do
-            if same_type tyenv ty ty_float then
-                float_count <- float_count + 1
-            elif is_tvar ty then
-                tvar_count <- tvar_count + 1
-        if float_count > 0 && (float_count + tvar_count) = tyl_args.Length then
-            List.iter (expression_expect warning_sink tyenv type_vars current_level ty_float) el_args
-            e_op.se_desc <- SEid (op + ".")
-            ty_float_res
-        else
-            List.iter2 (fun e_arg ty_arg -> unify_exp tyenv e_arg ty_arg ty_int) el_args tyl_args
-            ty_int_res
-    | SEapply ({ se_desc = SEid ".[]"}, [e_arg0; e_arg1]) ->
-        let ty_arg0 = expression warning_sink tyenv type_vars current_level None e_arg0
-        let ty_result =
-            if same_type tyenv ty_arg0 ty_string then
-                ty_char
+    | SEapply (func, args) ->
+        let apply_default() =
+            let ty1 = expression warning_sink tyenv type_vars current_level None func
+            try filter_arrow tyenv current_level ty1 |> ignore
+            with Unify -> raise (Type_error (This_expression_is_not_a_function, func.se_loc))
+            let ty_args, ty_res =
+                try split_last (filter_arrow_n tyenv current_level args.Length ty1)
+                with Unify -> raise (Type_error (Too_many_arguments_for_this_function, func.se_loc))
+            List.iter2 (fun ty e -> expression_expect warning_sink tyenv type_vars current_level ty e) ty_args args
+            ty_res
+        match func with
+        | { se_desc = SEid s } ->
+            if is_constructor s then
+                match pick_constr tyenv ty_hint s with
+                | None -> raise (Type_error (Constructor_undefined s, func.se_loc))
+                | Some info ->
+                    let ty_args, ty_res = instanciate_constr current_level info
+                    let e_args =
+                        match args with
+                        | [e] -> e
+                        | [] -> dontcare()
+                        | _ -> raise (Type_error (Multiple_arguments_to_constructor_must_be_tupled, func.se_loc))
+                    match ty_args, e_args with
+                    | [], _ -> raise (Type_error(Constructor_takes_no_argument s, func.se_loc))
+                    | [ty_arg], _ ->
+                        expression_expect warning_sink tyenv type_vars current_level ty_arg e_args
+                        e.se_desc <- SEconstr (info.ci_tag, [e_args])
+                        ty_res
+                    | _, { se_desc = SEtuple el } ->
+                        if List.length el = List.length ty_args then
+                            List.iter2 (expression_expect warning_sink tyenv type_vars current_level) ty_args el
+                            e.se_desc <- SEconstr (info.ci_tag, el)
+                            ty_res
+                        else raise (Type_error(Constructor_used_with_wrong_number_of_arguments (s, ty_args.Length, el.Length), func.se_loc))
+                    | _, _ -> raise (Type_error(Constructor_used_with_wrong_number_of_arguments (s, ty_args.Length, 1), func.se_loc))
             else
-                let ty_item = new_tvar current_level
-                let ty_array = Tconstr (type_id.ARRAY, [ty_item])
-                unify_exp tyenv e_arg0 ty_arg0 ty_array
-                ty_item
-        expression_expect warning_sink tyenv type_vars current_level ty_int e_arg1
-        ty_result
-    | SEapply ({ se_desc = SEid "^" } as e0, [e1; e2]) when same_type tyenv ty_string (expression warning_sink tyenv type_vars current_level None e1) && same_type tyenv ty_string (expression warning_sink tyenv type_vars current_level None e2) ->
-            e0.se_desc <- SEid "^^"
-            ty_string
-    | SEapply (e1, el) ->
-        let ty1 = expression warning_sink tyenv type_vars current_level None e1
-        try filter_arrow tyenv current_level ty1 |> ignore
-        with Unify -> raise (Type_error (This_expression_is_not_a_function, e1.se_loc))
-        let ty_args, ty_res =
-            try split_last (filter_arrow_n tyenv current_level el.Length ty1)
-            with Unify -> raise (Type_error (Too_many_arguments_for_this_function, e1.se_loc))
-        List.iter2 (fun ty e -> expression_expect warning_sink tyenv type_vars current_level ty e) ty_args el
-        ty_res
+                match s.[0] with
+                | '+' | '-' | '*' | '/' ->
+                    let args_len = args.Length
+                    if s.Length = 1 && args_len <= 2 then
+                        let tyl_args = List.map (fun e -> expression warning_sink tyenv type_vars current_level None e) args
+                        let mutable float_count = 0
+                        let mutable tvar_count = 0
+                        for ty in tyl_args do
+                            if same_type tyenv ty ty_float then
+                                float_count <- float_count + 1
+                            elif is_tvar ty then
+                                tvar_count <- tvar_count + 1
+                        if float_count > 0 && (float_count + tvar_count) = args_len then
+                            List.iter2 (fun e_arg ty_arg -> unify_exp tyenv e_arg ty_arg ty_float) args tyl_args
+                            func.se_desc <- SEid (s + ".")
+                            if args_len = 2 then ty_float else ty_ff
+                        else
+                            List.iter2 (fun e_arg ty_arg -> unify_exp tyenv e_arg ty_arg ty_int) args tyl_args
+                            if args_len = 2 then ty_int else ty_ii
+                    else apply_default()
+                | '~' ->
+                    let args_len = args.Length
+                    if s = "~-" && args_len = 1 then
+                        let ty_arg = expression warning_sink tyenv type_vars current_level None args.[0]
+                        if same_type tyenv ty_arg ty_float then
+                            unify_exp tyenv args.[0] ty_arg ty_float
+                            func.se_desc <- SEid ("~-.")
+                            ty_float
+                        else
+                            unify_exp tyenv args.[0] ty_arg ty_int
+                            ty_int
+                    else apply_default()
+                | '.' ->
+                    if s = ".[]" then
+                        match args with
+                        | [arg0; arg1] ->
+                            let ty_arg0 = expression warning_sink tyenv type_vars current_level None arg0
+                            let ty_result =
+                                if same_type tyenv ty_arg0 ty_string then
+                                    ty_char
+                                else
+                                    let ty_item = new_tvar current_level
+                                    let ty_array = Tconstr (type_id.ARRAY, [ty_item])
+                                    unify_exp tyenv arg0 ty_arg0 ty_array
+                                    ty_item
+                            expression_expect warning_sink tyenv type_vars current_level ty_int arg1
+                            ty_result
+                        | _ -> dontcare()
+                    else apply_default()
+                | '^' ->
+                    let args_len = args.Length
+                    if s.Length = 1 && args_len <= 2 then
+                        let tyl_args = List.map (fun e -> expression warning_sink tyenv type_vars current_level None e) args
+                        let mutable string_count = 0
+                        let mutable tvar_count = 0
+                        for ty in tyl_args do
+                            if same_type tyenv ty ty_string then
+                                string_count <- string_count + 1
+                            elif is_tvar ty then
+                                tvar_count <- tvar_count + 1
+                        if string_count > 0 && (string_count + tvar_count) = args_len then
+                            List.iter2 (fun e_arg ty_arg -> unify_exp tyenv e_arg ty_arg ty_string) args tyl_args
+                            func.se_desc <- SEid "^^"
+                            if args_len = 2 then ty_string else arrow ty_string ty_string
+                        else
+                            let ty_array = Tconstr (type_id.ARRAY, [new_tvar current_level])
+                            List.iter2 (fun e_arg ty_arg -> unify_exp tyenv e_arg ty_arg ty_array) args tyl_args
+                            if args_len = 2 then ty_array else arrow ty_array ty_array
+                    else apply_default()
+                | _ -> apply_default()
+        | _ -> apply_default()
     | SEfn (patl, e1) ->
         let loc_patl = { (List.head patl).sp_loc with ed = (list_last patl).sp_loc.ed }
         let ty_args, new_bnds = pattern_list tyenv type_vars current_level loc_patl (List.init patl.Length (fun _ -> None)) patl
@@ -837,7 +871,7 @@ let rec expression (warning_sink : warning_sink) (tyenv : tyenv) (type_vars : Di
         let ty = type_expr tyenv (Some 1) type_vars sty
         expression_expect warning_sink tyenv type_vars current_level ty e1
         ty
-    | SEformat _ -> dontcare()
+    | _ -> dontcare()
 
 /// Infer the type of expression with expectation. The expectation is used as a hint.
 /// Returns unit and the result remains in the ty_expected.
@@ -1006,7 +1040,7 @@ let type_command_list warning_sink tyenv cmds =
             tyenvs.Add(tyenv)
             for rules in ruless do
                 // validate function names
-                let names = Array.map (fun (name, _, _, _, _, _) -> name) rules
+                let names = Array.map (fun (name, _, _, _, _, _, _) -> name) rules
                 Array.iter (fun name -> if is_constructor name then raise (Type_error (Invalid_identifier, cmd.sc_loc))) names
                 all_differ cmd.sc_loc kind.Function_name kind.Function_definition names
                 
@@ -1015,7 +1049,7 @@ let type_command_list warning_sink tyenv cmds =
                 let tyenv_with_dummy_fun_defs = add_values tyenv dummy_infos
 
                 let new_values = List()
-                for name, args, _, _, actions, loc in rules do
+                for name, args, _, _, _, actions, loc in rules do
                     all_differ loc kind.Variable_name kind.Function_definition args
                     let arg_infos = (List.map (fun arg -> (arg, { vi_type = new_tvar 1; vi_access = access.Immutable; })) args) @ [("lexbuf", { vi_type = Tconstr (type_id.LEXBUF, []); vi_access = Immutable })]
                     let tyenv_with_arg_defs = add_values tyenv_with_dummy_fun_defs arg_infos
@@ -1030,15 +1064,16 @@ let type_command_list warning_sink tyenv cmds =
                 for i = 0 to rules.Length - 1 do
                     let _, dummy_info = dummy_infos.[i]
                     let _, ty = new_values.[i]
-                    let _, _, _, _, _, loc = rules.[i]
+                    let _, _, _, _, _, _, loc = rules.[i]
                     let ty_expected = dummy_info.vi_type
                     try unify tyenv ty ty_expected
                     with Unify -> raise (Type_error (Type_mismatch (tyenv, Expression, ty, ty_expected), loc))
                 let new_values = Array.map (fun (name, ty) -> (name, { vi_type = ty; vi_access = Immutable })) new_values
                 for i = 0 to rules.Length - 1 do
-                    let name, args, alphabets, dfa, actions, loc = rules.[i]
+                    let name, args, alphabets, dfa, dfa_node_table, actions, loc = rules.[i]
                     let _, value_info = new_values.[i]
                     accu.Add(name, args, alphabets, dfa, actions, loc, value_info)
+                    warning_sink ((Lexer_created (name, dfa_node_table.Length)), loc)
                 tyenv <- Types.add_values tyenv new_values
             cmd.sc_desc <- SCClex (accu.ToArray())
         | _ -> dontcare()

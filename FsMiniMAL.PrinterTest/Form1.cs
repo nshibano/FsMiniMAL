@@ -35,7 +35,7 @@ namespace FsMiniMAL.PrinterTest
             var cols = (int)(this.Width / w) - 5;
             g.FillRectangle(Brushes.LightGray, 0f, 0f, cols * w, this.Height);
             var interp = FsMiniMAL.Top.createInterpreter();
-            //interp.Do("array_init 100 (fn n -> n * n)");
+            //i.Do("array_init 100 (fn n -> n * n)");
             //interp.Do("array_init 30 (fn n -> array_init 5 (fn m -> begin val n = n + 1; val m = m + 1; var accu = 1; for u = 0 to m - 1 do accu <- accu * n; accu end))");
             //interp.Do("[|[|[|[|1,2,3|],[|4,5,6|]|]|]|]");
             interp.Do("(100000, 1000000, -100000000, Some (-1000000000, 100000))");
@@ -45,12 +45,13 @@ namespace FsMiniMAL.PrinterTest
 
             var brushes = new[]
             {
-                Brushes.LightCoral,
                 Brushes.LightGreen,
-                Brushes.LightCyan,
                 Brushes.LightPink,
+                Brushes.LightCyan,
                 Brushes.LightYellow,
+                Brushes.LightBlue,
                 Brushes.LightSalmon,
+                Brushes.LightCoral
             };
 
             var x = 0f;
@@ -67,8 +68,8 @@ namespace FsMiniMAL.PrinterTest
                 }
                 else
                 {
-                    int level = levels[i];
-                    g.FillRectangle(brushes[(level < 0 ? ~level : level) % brushes.Length], new RectangleF(x, y, w, 22f));
+                    var level = levels[i];
+                    g.FillRectangle(brushes[level < 0 ? ~level : level], new RectangleF(x, y, w, 22f));
                     if (level < 0)
                     {
                         g.FillRectangle(Brushes.Red, new RectangleF(x, y + 20f, w, 2f));
@@ -79,6 +80,8 @@ namespace FsMiniMAL.PrinterTest
 
                 i++;
             }
+
+            // g.DrawString(s, font, Brushes.Black, new PointF(0f, 20f), StringFormat.GenericTypographic);
         }
     }
 }

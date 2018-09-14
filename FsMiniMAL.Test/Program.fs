@@ -409,6 +409,14 @@ while not lb.eof do
     accu << token lb;
 accu"
         "[|Some (0, 5), Some (6, 11), None|]"
+    
+    let tailcall_test() =
+        let interp = Top.createInterpreterFromConfig({ config.Default with maximum_stack_depth = 100 })
+        interp.Do("fun loop accu n m = if n <= m then loop (accu + n) (n + 1) m else accu")
+        interp.Do("loop 0 1 1000")
+        if not (interp.State = State.Success && to_int interp.Accu = 500500) then
+            printfn "Tailcall test failed."
+    tailcall_test()
 
     printfn "Done."
     //printfn "Elapsed: %d (ms)" sw.ElapsedMilliseconds

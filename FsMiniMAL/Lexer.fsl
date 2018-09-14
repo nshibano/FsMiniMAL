@@ -33,7 +33,7 @@ and main =
   | "@\""                                    { verbatim_string lexbuf.StartPos (StringBuilder()) lexbuf }
   | "'"                                      { char_or_var lexbuf.StartPos lexbuf }
   | "(*"                                     { comment lexbuf.StartPos 1 lexbuf }
-  | "&&"                                     { AMPERSANDAMPERSAND }
+  | "&&"                                     { AMPAMP }
   | "||"                                     { BARBAR }
   | "!"                                      { EXCLAMATION }
   | "("                                      { LPAREN }
@@ -60,18 +60,14 @@ and main =
   | "}"                                      { RBRACE }
   | "-" | "-."                               { SUBTRACTIVE (lexeme_string lexbuf) }
   | "~-" | "~-." | "~~~"                     { UNARY (lexeme_string lexbuf) }
-  | "!="
-  | "<>"
-  | ['<' '>'] '=' ?                          { INFIX0(lexeme_string lexbuf) }
-  | ['@' '^'] | "^^"                         { INFIX1(lexeme_string lexbuf) }
-  | "+" | "+."                               { INFIX2(lexeme_string lexbuf) }
-  | "%"
-  | "*."
-  | "/" | "/."
-  | "&&&" | "|||"
-  | "^^^"                                    { INFIX3(lexeme_string lexbuf) }
-  | ">>>" | "<<<"                            
-  | "**"                                     { INFIX4(lexeme_string lexbuf) }
+  | "<>" | "!="
+  | "<" | ">" |"<=" | ">="                   { COMPARE (lexeme_string lexbuf) }
+  | "@" | "^" | "^^"                         { CONCAT (lexeme_string lexbuf) }
+  | "+" | "+."             
+  | "&&&" | "|||" | "^^^"                    { ADDITIVE (lexeme_string lexbuf) }
+  | "*." | "/" | "/." | "%"                  
+  | ">>>" | "<<<"                            { MULTDIV (lexeme_string lexbuf) }
+  | "**"                                     { STARSTAR }
   | "//"                                     { eol_comment lexbuf.StartPos lexbuf }
   | '?'                                      { QMARK }
   | eof                                      { EOF }

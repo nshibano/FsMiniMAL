@@ -91,13 +91,13 @@ let escaped_char c =
 
 exception InvalidValue
  
-type value_loop_runtime =
+type printer_state =
     { tyenv : tyenv
       mutable char_counter : int
       limit : int }
 
-let textNode (rt : value_loop_runtime)  (s : string) =
-    rt.char_counter <- rt.char_counter + s.Length
+let textNode (st : printer_state)  (s : string) =
+    st.char_counter <- st.char_counter + s.Length
     Text (StringBuilder(s))
 
 let parenthesize (node : Node) =
@@ -109,10 +109,10 @@ let parenthesize (node : Node) =
 
 let textInvalid = "<invalid>"
 
-let rec value_loop (rt : value_loop_runtime) (path : ImmutableHashSet<value>) (level : int) (ty : type_expr) (value : value) : Node =
+let rec value_loop (st : printer_state) (path : ImmutableHashSet<value>) (level : int) (ty : type_expr) (value : value) : Node =
     match repr ty, value with
-    | Tarrow _, _ -> textNode rt "<fun>"
-    | Ttuple [], _ -> textNode rt "()"
+    | Tarrow _, _ -> textNode st "<fun>"
+    | Ttuple [], _ -> textNode st "()"
     | Tconstr(type_id.INT, []), Vint (i, _) ->
         let s = i.ToString()
         let s =
@@ -120,9 +120,9 @@ let rec value_loop (rt : value_loop_runtime) (path : ImmutableHashSet<value>) (l
                 "(" + s + ")"
             else
                 s
-        textNode rt s
+        textNode st s
     | Tconstr(type_id.CHAR, []), Vint(i, _) when int Char.MinValue <= i && i <= int Char.MaxValue ->
-        textNode rt ("'" + escaped_char (char i) + "'")
+        textNode st ("'" + escaped_char (char i) + "'")
     | Tconstr(type_id.FLOAT, []), Vfloat (x, _) ->
         let s = string_of_float x
         let s =
@@ -130,7 +130,7 @@ let rec value_loop (rt : value_loop_runtime) (path : ImmutableHashSet<value>) (l
                 "(" + s + ")"
             else
                 s
-        textNode rt s
+        textNode st s
     | Tconstr (type_id.STRING, []), Vstring (s, _) ->
         let limit = 40
         if limit < s.Length then
@@ -138,7 +138,7 @@ let rec value_loop (rt : value_loop_runtime) (path : ImmutableHashSet<value>) (l
             for i = 0 to limit - 1 do
                 let ec = escaped_char s.[i]
                 sb.Add(ec)
-            textNode rt (sprintf "<string len=%d \"%s\"...>" s.Length (sb.ToString()))
+            textNode st (sprintf "<string len=%d \"%s\"...>" s.Length (sb.ToString()))
         else
             let sb = StringBuilder()
             sb.Add('"')
@@ -146,14 +146,14 @@ let rec value_loop (rt : value_loop_runtime) (path : ImmutableHashSet<value>) (l
                 let ec = escaped_char s.[i]
                 sb.Add(ec)
             sb.Add('"')
-            textNode rt (sb.ToString())
+            textNode st (sb.ToString())
     | _ when path.Contains(value) ->
-            textNode rt "..."
+            textNode st "..."
     | Ttuple l, _ ->
-        list_loop rt (path.Add(value)) "(" ")" (Seq.zip l (get_fields value))
+        list_loop st (path.Add(value)) "(" ")" (Seq.zip l (get_fields value))
     | Tconstr(type_id.ARRAY, [a]), Varray ary ->
         let items = seq { for i = 0 to ary.count - 1 do yield (a, ary.storage.[i]) }
-        list_loop rt (path.Add(value)) "[|" "|]" items
+        list_loop st (path.Add(value)) "[|" "|]" items
     | Tconstr(type_id.LIST, [a]), _ ->
         let items = 
             seq {
@@ -166,54 +166,54 @@ let rec value_loop (rt : value_loop_runtime) (path : ImmutableHashSet<value>) (l
                     match x with
                     | Vblock (1, [| hd; tl |], _) ->
                         path <- path.Add(x)
-                        yield value_loop rt path 0 a hd
+                        yield value_loop st path 0 a hd
                         x <- tl
                     | _ -> raise InvalidValue }
-        seq_loop rt "[" "]" items
+        seq_loop st "[" "]" items
     | Tconstr(type_id.EXN, _), _ ->
         let tag = get_tag value
         let fields = get_fields value
-        let name, info = rt.tyenv.exn_constructors.[tag]
-        if fields.Length <> info.ci_args.Length then textNode rt textInvalid
+        let name, info = st.tyenv.exn_constructors.[tag]
+        if fields.Length <> info.ci_args.Length then textNode st textInvalid
         else
             if fields.Length = 0 then
-                textNode rt name
+                textNode st name
             else
-                let name, info = rt.tyenv.exn_constructors.[tag]
+                let name, info = st.tyenv.exn_constructors.[tag]
                 let section = Section.Create(Flow, 0)
-                section.Add(textNode rt name)
+                section.Add(textNode st name)
                 let fields =
                     match info.ci_args with
-                    | [ ty_arg ] -> value_loop rt (path.Add(value)) 1 ty_arg fields.[0]
-                    | args -> list_loop rt (path.Add(value)) "(" ")" (Seq.zip args fields)
+                    | [ ty_arg ] -> value_loop st (path.Add(value)) 1 ty_arg fields.[0]
+                    | args -> list_loop st (path.Add(value)) "(" ")" (Seq.zip args fields)
                 section.Add(fields)
                 let node = Section section
                 if level > 0 then parenthesize node else node
     | Tconstr(id, tyl), _ ->
-        match rt.tyenv.types_of_id.TryFind id with
-        | None -> textNode rt textInvalid
+        match st.tyenv.types_of_id.TryFind id with
+        | None -> textNode st textInvalid
         | Some info ->
             let sl = List.zip info.ti_params tyl
             match info.ti_kind with
-            | Kbasic -> textNode rt "<abstr>"           
-            | Kabbrev ty -> value_loop rt path level (subst sl ty) value
+            | Kbasic -> textNode st "<abstr>"           
+            | Kabbrev ty -> value_loop st path level (subst sl ty) value
             | Kvariant casel ->
                 match value with
                 | Vint (tag, _) ->
                     let name, _, _ = List.find (fun (_, tag', _) -> tag = tag') casel
-                    textNode rt name
+                    textNode st name
                 | Vblock (tag, fields, _) ->
                     let name, _, tyl' = List.find (fun (_, tag', _) -> tag = tag') casel
                     let section = Section.Create(Flow, 0)
-                    section.Add(textNode rt name)
+                    section.Add(textNode st name)
                     let fields =
                         (match tyl' with
-                        | [ ty' ] -> value_loop rt (path.Add(value)) 1 (subst sl ty') fields.[0]
-                        | _ -> list_loop rt (path.Add(value)) "(" ")" (Seq.zip (Seq.map (subst sl) tyl') fields))
+                        | [ ty' ] -> value_loop st (path.Add(value)) 1 (subst sl ty') fields.[0]
+                        | _ -> list_loop st (path.Add(value)) "(" ")" (Seq.zip (Seq.map (subst sl) tyl') fields))
                     section.Add(fields)
                     let node = Section section
                     if level > 0 then parenthesize node else node
-                | _ -> textNode rt textInvalid
+                | _ -> textNode st textInvalid
             | Krecord l ->
                 match value with
                 | Vblock (_, fields, _) ->
@@ -222,14 +222,14 @@ let rec value_loop (rt : value_loop_runtime) (path : ImmutableHashSet<value>) (l
                         Seq.zip l fields
                         |> Seq.map (fun ((name : string, ty_gen, _ : access), value) ->
                             let section = Section.Create(Flow, 0)
-                            section.Add(textNode rt (name + " ="))
-                            section.Add(value_loop rt path 0 (subst sl ty_gen) value)
+                            section.Add(textNode st (name + " ="))
+                            section.Add(value_loop st path 0 (subst sl ty_gen) value)
                             Section section)
-                    seq_loop rt "{" "}" items
-                | _ -> textNode rt textInvalid
+                    seq_loop st "{" "}" items
+                | _ -> textNode st textInvalid
     | _ -> raise InvalidValue
 
-and seq_loop (rt : value_loop_runtime) (lp : string) (rp : string) (items : Node seq) : Node =
+and seq_loop (st : printer_state) (lp : string) (rp : string) (items : Node seq) : Node =
     let section = Section.Create(Flow, lp.Length)
 
     let mutable first = true
@@ -241,14 +241,14 @@ and seq_loop (rt : value_loop_runtime) (lp : string) (rp : string) (items : Node
 
     let enum = items.GetEnumerator()
     while
-        (match enum.MoveNext(), rt.char_counter < rt.limit with
+        (match enum.MoveNext(), st.char_counter < st.limit with
             | true, true ->
                 comma()
                 section.Add(enum.Current)
                 true
             | true, false ->
                 comma()
-                section.Add(textNode rt "...")
+                section.Add(textNode st "...")
                 false
             | false, _ -> false) do ()
     
@@ -256,12 +256,12 @@ and seq_loop (rt : value_loop_runtime) (lp : string) (rp : string) (items : Node
     section.Weld rp
     Section section
 
-and list_loop (rt : value_loop_runtime) (path : ImmutableHashSet<value>) lp rp (items : (type_expr * value) seq) : Node =
-    seq_loop rt lp rp (Seq.map (fun (ty, v) -> value_loop rt path 0 ty v) items)
+and list_loop (st : printer_state) (path : ImmutableHashSet<value>) lp rp (items : (type_expr * value) seq) : Node =
+    seq_loop st lp rp (Seq.map (fun (ty, v) -> value_loop st path 0 ty v) items)
 
 let node_of_value (tyenv : tyenv) ty value =
     try
-        value_loop { tyenv = tyenv; char_counter = 0; limit = 1000} (ImmutableHashSet.Create<value>(Misc.PhysicalEqualityComparer)) 0 ty value
+        value_loop { tyenv = tyenv; char_counter = 0; limit = 1000 } (ImmutableHashSet.Create<value>(Misc.PhysicalEqualityComparer)) 0 ty value
     with InvalidValue ->
         Text (StringBuilder(textInvalid))
 
@@ -277,7 +277,7 @@ let node_of_type_expr (tyenv : tyenv) name_of_var is_scheme prio ty =
             Text (StringBuilder(prefix + name_of_var tv))
         | Tarrow _ ->
             let rec flatten ty =
-                match ty with
+                match repr ty with
                 | Tarrow (name, ty1, ty2) -> (name, ty1) :: flatten ty2
                 | _ -> [("", ty)]
             let tyl = Array.ofList (flatten ty)
@@ -523,6 +523,7 @@ let print_typechk_error lang cols desc =
         | Useless_with_clause -> "All the fields are explicitly listed in this record: the 'with' clause is useless."
         | Already_abstract name -> sprintf "Type %s is already abstract." name
         | Basic_types_cannot_be_hidden -> "Basic types cannot be hidden."
+        | Lexer_created (name, count) -> sprintf "Lexer %s created. %d states." name count
 
     | Ja ->
         match desc with
@@ -569,6 +570,7 @@ let print_typechk_error lang cols desc =
         | Useless_with_clause -> "全てのフィールドが明示的に与えられているため、 with 節は不要です。"
         | Already_abstract name -> sprintf "型 %s は既に抽象型です。" name
         | Basic_types_cannot_be_hidden -> "基本型は隠蔽できません。"
+        | Lexer_created (name, count) -> sprintf "レキサ %s が作成されました。状態数は %d です。" name count
     
 let print_message lang cols (msg : Message) =
     match msg with

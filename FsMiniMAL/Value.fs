@@ -7,9 +7,6 @@ open System.Reflection
 open FSharp.Reflection
 
 open Types
-open System.Text
-open System.ComponentModel
-open FsMiniMAL.MalLex
 
 let sizeof_int, sizeof_float, block_overhead, block_increment, array_overhead, array_increment, string_overhead, string_increment =
     if IntPtr.Size = 8
@@ -43,8 +40,8 @@ type value =
     | Vformat of PrintfFormat.PrintfCommand list
     | Vbuiltin of arity : int * builtin_id
     | Vfunc of arity : int * func : (runtime -> value array -> value)
-    | Vclosure of arity : int * env_size : int * offsets : int array * captures : value array * code : code
-    | Vpartial of arity : int * values : value array
+    | Vclosure of arity : int * env_size : int * captures : value array * code : code
+    | Vpartial of arity : int * args : value array
     | Vvar of value ref
     | Vobj of obj
     
@@ -65,19 +62,23 @@ and malarray =
 and code =
   // expressions
   | UEconst of value
-  | UEenv of int
-  | UEenvvar of int
+  | UEgetenv of int
+  | UEgetenvvar of int
   | UEsetenvvar of int * code
+  | UEgetcap of int
+  | UEgetcapvar of int
+  | UEsetcapvar of int * code
   | UEblock of tag : int * fields : code array
   | UEblockwith of orig : code * field_indexes : int array * field_values : code array // { orig with field = expr; ... }
   | UEarray of code array
   | UEapply of code array
-  | UEfn of env_size : int * arity : int * capture_ofs_from : int array * capture_ofs_to : int array * code
-  | UEbegin of cmdl : code array
+  | UEtailcall of code array
+  | UEfn of env_size : int * arity : int * is_capture_flags : bool array * ofss : int array * code
+  | UEbegin of code array
   | UEcase of code * (pattern * code option * code) array // (test_expr, [| (pat, when_clause_expr, result_expr); ... |])
   | UEtry of code * (pattern * code) array
   | UEif of code * code * code
-  | UEfor of ofs : int * first : code * dirflag * last : code * code
+  | UEfor of ofs : int * first : code * dirflag * last : code * body : code
   | UEwhile of code * code
   
   // dummy code
@@ -189,7 +190,7 @@ let of_float (rt : runtime) x =
 let to_float v = match v with Vfloat (x, _) -> x | _ -> dontcare()
 
 let block_create (rt : runtime) tag (fields : value array) =
-    Interlocked.Add(rt.memory_counter, block_overhead + fields.Length * block_increment) |> ignore
+    Interlocked.Add(rt.memory_counter, sizeof_block fields.Length) |> ignore
     Vblock (tag, fields, rt.memory_counter)
 
 let get_tag (v : value) =
@@ -209,7 +210,7 @@ let array_create (rt : runtime) (needed_capacity : int) =
     let capacity =
         try find_next_capacity_exn rt.config.maximum_array_length needed_capacity
         with :? InvalidOperationException -> raise InsufficientMemory
-    let bytes = array_overhead + array_increment * capacity
+    let bytes = sizeof_array capacity
     if not (check_free_memory rt bytes) then raise InsufficientMemory
     Interlocked.Add(rt.memory_counter, bytes) |> ignore
     Varray { count = 0; storage = Array.zeroCreate<value> capacity; memory_counter = rt.memory_counter }
@@ -324,7 +325,7 @@ let to_string v =
     | _ -> dontcare()
 
 let of_string (rt : runtime) (s : string) =
-    Interlocked.Add(rt.memory_counter, string_overhead + string_increment * s.Length) |> ignore
+    Interlocked.Add(rt.memory_counter, sizeof_string s.Length) |> ignore
     Vstring (s, rt.memory_counter)
 
 let to_obj v =
@@ -424,7 +425,7 @@ let rec obj_of_value (cache : Dictionary<Type, HashSet<value> -> value -> obj>) 
             elif ty = typeof<string> then
                 (fun (touch : HashSet<value>) (value : value) -> box (to_string value))
             elif tyenv.registered_abstract_types.ContainsKey(ty) then
-                (fun (touch : HashSet<value>) (value : value) -> box (to_obj value))
+                (fun (touch : HashSet<value>) (value : value) -> to_obj value)
             elif ty.IsArray then
                 let ty_elem = ty.GetElementType()
                 (fun (touch : HashSet<value>) (value : value) ->
@@ -543,87 +544,24 @@ let rec value_of_obj (cache : Dictionary<Type, runtime -> obj -> value>) (tyenv 
 let touch_create() = HashSet<value>(Misc.PhysicalEqualityComparer)
 
 let wrap_fsharp_func (tyenv : tyenv) (obj_of_value_cache : Dictionary<Type, HashSet<value> -> value -> obj>) (value_of_obj_cache : Dictionary<Type, runtime -> obj -> value>) (ty : Type) (func : obj) =
-    
     let rec flatten ty =
         if FSharpType.IsFunction ty then
             let t1, t2 = FSharpType.GetFunctionElements ty
             t1 :: flatten t2
         else
             [ty]
-    
     let tyl = Array.ofList (flatten ty)
-
-    if not (tyl.Length >= 3 && tyl.[0] = typeof<runtime>) then dontcare()
-
-    match tyl.Length with
-    | 3 ->
-        let invokefast =
-            let methods = typedefof<FSharpFunc<_, _>>.MakeGenericType(tyl.[0], tyl.[1]).GetTypeInfo().DeclaredMethods
-            let invokefast_gen = Seq.find (fun (mi : MethodInfo) -> mi.Name = "InvokeFast" && mi.GetParameters().Length = 3) methods
-            invokefast_gen.MakeGenericMethod(tyl.[2])
-        let func rt values =
-            match values with
-            | [| arg0 |] ->
-                let touch = touch_create()
-                let arg0 = obj_of_value obj_of_value_cache tyenv touch tyl.[1] arg0
-                let result_obj =
-                    try invokefast.Invoke(null, [| func; rt; arg0 |])
-                    with :? System.Reflection.TargetInvocationException as exn -> raise exn.InnerException
-                value_of_obj value_of_obj_cache tyenv  tyl.[2] rt result_obj
-            | _ -> dontcare()
-        Vfunc (1, func)
-    | 4 ->
-        let invokefast =
-            let methods = typedefof<FSharpFunc<_, _>>.MakeGenericType(tyl.[0], tyl.[1]).GetTypeInfo().DeclaredMethods
-            let invokefast_gen = Seq.find (fun (mi : MethodInfo) -> mi.Name = "InvokeFast" && mi.GetParameters().Length = 4) methods
-            invokefast_gen.MakeGenericMethod(tyl.[2], tyl.[3])
-        let func rt values =
-            match values with
-            | [| arg0; arg1 |] ->
-                let touch = touch_create()
-                let arg0 = obj_of_value obj_of_value_cache tyenv touch tyl.[1] arg0
-                let arg1 = obj_of_value obj_of_value_cache tyenv touch tyl.[2] arg1
-                let result_obj =
-                    try invokefast.Invoke(null, [| func; rt; arg0; arg1 |])
-                    with :? System.Reflection.TargetInvocationException as exn -> raise exn.InnerException
-                value_of_obj value_of_obj_cache tyenv  tyl.[3] rt result_obj
-            | _ -> dontcare()
-        Vfunc (2, func)
-    | 5 ->
-        let invokefast =
-            let methods = typedefof<FSharpFunc<_, _>>.MakeGenericType(tyl.[0], tyl.[1]).GetTypeInfo().DeclaredMethods
-            let invokefast_gen = Seq.find (fun (mi : MethodInfo) -> mi.Name = "InvokeFast" && mi.GetParameters().Length = 5) methods
-            invokefast_gen.MakeGenericMethod(tyl.[2], tyl.[3], tyl.[4])
-        let func rt values =
-            match values with
-            | [| arg0; arg1; arg2 |] ->
-                let touch = touch_create()
-                let arg0 = obj_of_value obj_of_value_cache tyenv touch tyl.[1] arg0
-                let arg1 = obj_of_value obj_of_value_cache tyenv touch tyl.[2] arg1
-                let arg2 = obj_of_value obj_of_value_cache tyenv touch tyl.[3] arg2
-                let result_obj =
-                    try invokefast.Invoke(null, [| func; rt; arg0; arg1; arg2 |])
-                    with :? System.Reflection.TargetInvocationException as exn -> raise exn.InnerException
-                value_of_obj value_of_obj_cache tyenv  tyl.[4] rt result_obj
-            | _ -> dontcare()
-        Vfunc (3, func)
-    | 6 ->
-        let invokefast =
-            let methods = typedefof<FSharpFunc<_, _>>.MakeGenericType(tyl.[0], tyl.[1]).GetTypeInfo().DeclaredMethods
-            let invokefast_gen = Seq.find (fun (mi : MethodInfo) -> mi.Name = "InvokeFast" && mi.GetParameters().Length = 6) methods
-            invokefast_gen.MakeGenericMethod(tyl.[2], tyl.[3], tyl.[4], tyl.[5])
-        let func rt values =
-            match values with
-            | [| arg0; arg1; arg2; arg3 |] ->
-                let touch = touch_create()
-                let arg0 = obj_of_value obj_of_value_cache tyenv touch tyl.[1] arg0
-                let arg1 = obj_of_value obj_of_value_cache tyenv touch tyl.[2] arg1
-                let arg2 = obj_of_value obj_of_value_cache tyenv touch tyl.[3] arg2
-                let arg3 = obj_of_value obj_of_value_cache tyenv touch tyl.[4] arg3
-                let result_obj =
-                    try invokefast.Invoke(null, [| func; rt; arg0; arg1; arg2; arg3 |])
-                    with :? System.Reflection.TargetInvocationException as exn -> raise exn.InnerException
-                value_of_obj value_of_obj_cache tyenv  tyl.[5] rt result_obj
-            | _ -> dontcare()
-        Vfunc (4, func)
-    | _ -> raise (NotImplementedException())
+    if not (3 <= tyl.Length && tyl.Length <= 6 && tyl.[0] = typeof<runtime>) then dontcare()
+    let arity = tyl.Length - 2
+    let invokefast =
+        let methods = typedefof<FSharpFunc<_, _>>.MakeGenericType(tyl.[0], tyl.[1]).GetMethods()
+        let invokefast_gen = Array.find (fun (mi : MethodInfo) -> mi.Name = "InvokeFast" && mi.GetParameters().Length = 2 + arity) methods
+        invokefast_gen.MakeGenericMethod(Array.sub tyl 2 arity)
+    let func (rt : runtime) (argv : value array) =
+        let touch = touch_create()
+        let arg_objs = Array.init arity (fun i -> obj_of_value obj_of_value_cache tyenv touch tyl.[i+1] argv.[i])
+        let result_obj =
+            try invokefast.Invoke(null, Array.append [| func; rt; |] arg_objs)
+            with :? System.Reflection.TargetInvocationException as exn -> raise exn.InnerException
+        value_of_obj value_of_obj_cache tyenv tyl.[tyl.Length - 1] rt result_obj
+    Vfunc (arity, func)

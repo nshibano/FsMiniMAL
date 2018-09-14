@@ -74,13 +74,15 @@ type expression =
     { mutable se_desc : expression_desc
       se_loc : location }
 
+and list_kind = LKlist | LKarray
+
 and expression_desc = 
     | SEid of string
     | SEint of string
     | SEfloat of float
     | SEchar of char
     | SEtuple of expression list
-    | SEarray of expression list
+    | SElist of list_kind * expression list
     | SEstring of string
     | SEapply of expression * expression list
     | SEfn of pattern list * expression
@@ -128,7 +130,7 @@ and lex_def =
 
 let describe_location (loc : location) =
     let {src = input; st = st; ed = ed} = loc
-    let filename = Some (st.FileName)
+    let filename = if st.FileName = dummy_file_name then None else Some (st.FileName)
     let sb = System.Text.StringBuilder()
     let pf fmt = Printf.bprintf sb fmt
 
