@@ -1,5 +1,3 @@
-[![Build Status](https://ci.appveyor.com/api/projects/status/github/nshibano/malmacs)](https://ci.appveyor.com/project/nshibano/malmacs/branch/master)
-
 # FsMiniMAL
 
 An interpreter of OCaml/F# like programing language, designed for .NET application embedded purposes, inplemented in F#.
